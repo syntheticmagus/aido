@@ -5,11 +5,12 @@ import path from 'node:path';
 export function createArtifactsRouter(workspaceRoot: string) {
   const router = Router();
 
-  // GET /artifacts/:projectName/*path
-  router.get('/:projectName/*', async (req, res) => {
-    const { projectName } = req.params;
-    // Express wildcard param — access via req.params[0]
-    const filePath = (req.params as unknown as Record<string, string>)['0'] ?? '';
+  // GET /artifacts/:projectName/*filePath
+  router.get('/:projectName/*filePath', async (req, res) => {
+    const params = req.params as unknown as { projectName: string; filePath: string | string[] };
+    const { projectName } = params;
+    const fp = params.filePath;
+    const filePath = Array.isArray(fp) ? fp.join('/') : (fp ?? '');
 
     // Reject access to .aido internals
     if (filePath.startsWith('.aido/') || filePath.includes('/.aido/')) {

@@ -5,7 +5,10 @@
       "Bash(node:*)",
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npm start:*)",
+      "Bash(curl -s http://localhost:3000/api/project/status)",
+      "Bash(kill %1)"
     ]
   }
 }

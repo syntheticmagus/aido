@@ -1,6 +1,5 @@
 # Build output
 dist/
-src/server/public/
 
 # Dependencies
 node_modules/

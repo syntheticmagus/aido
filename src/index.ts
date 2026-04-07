@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   const publicDir = path.join(__dirname, 'server', 'public');
   app.use(express.static(publicDir));
   // SPA fallback — serve index.html for any unmatched route
-  app.get('*', (_req, res) => {
+  app.get('*splat', (_req, res) => {
     const indexPath = path.join(publicDir, 'index.html');
     res.sendFile(indexPath, (err) => {
       if (err) res.status(404).send('Frontend not built. Run: cd frontend && npm run build');
