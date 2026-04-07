@@ -1,0 +1,41 @@
+{
+  "name": "aido",
+  "version": "0.1.0",
+  "description": "Autonomous AI Development Orchestrator",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.0",
+    "chokidar": "^4.0.3",
+    "express": "^5.0.1",
+    "glob": "^11.0.1",
+    "nanoid": "^5.1.5",
+    "node-pty": "^1.0.0",
+    "openai": "^4.96.0",
+    "p-queue": "^8.1.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "socket.io": "^4.8.1",
+    "tiktoken": "^1.0.21",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.15.2",
+    "@typescript-eslint/eslint-plugin": "^8.31.0",
+    "@typescript-eslint/parser": "^8.31.0",
+    "eslint": "^9.25.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}
