@@ -1,9 +1,9 @@
 import { EventEmitter, once } from 'node:events';
 import path from 'node:path';
 import { createLogger } from '../utils/logger.js';
+import { generateId } from '../utils/id.js';
 import { TaskGraph } from './task-graph.js';
 import { BudgetTracker } from './budget-tracker.js';
-import { AgentPool } from './agent-pool.js';
 import { ModelRouter } from '../llm/router.js';
 import { AnthropicProvider } from '../llm/providers/anthropic.js';
 import { WorkspaceManager } from '../workspace/manager.js';
@@ -16,16 +16,41 @@ import { LocalProvider } from '../llm/providers/local.js';
 import { WorkspaceWatcher } from '../workspace/watcher.js';
 import type { ModelsConfig, Task, AgentRole } from '../config/schema.js';
 import type { AgentResult } from '../agents/base-agent.js';
+import type { RunAgentFn } from '../agents/team-lead.js';
 import type { LLMProvider } from '../llm/types.js';
+import type { AgentContext } from '../tools/types.js';
 
 const log = createLogger({ module: 'orchestrator' });
 
 export type ProjectStatus = 'idle' | 'running' | 'paused' | 'done' | 'failed';
 
+/** Info about a currently-running worker agent (mirrored to the UI). */
+interface ActiveAgentInfo {
+  agentId: string;
+  taskId: string;
+  role: string;
+  modelId: string;
+  startTime: number;
+}
+
+/** Injected into the team lead's message every REMINDER_INTERVAL wakes. */
+const TEAM_LEAD_REMINDER = `
+[PERIODIC GUIDELINES REMINDER]
+You are the Team Lead. Follow this workflow for every task:
+  1. PLAN  — Use list_tasks to see current state. Create tasks with create_task if any are missing.
+  2. DISPATCH — Call dispatch_task for each pending task whose dependencies are done. Provide specific instructions.
+  3. REVIEW — After dispatch_task returns, call approve_result (mark done) or reject_result (send back with feedback).
+  4. REPEAT — Continue until all tasks are done.
+
+NEVER implement code, write files, or run shell commands yourself.
+All implementation goes through dispatch_task — that is the ONLY way to execute work.
+`.trim();
+
+const REMINDER_INTERVAL = 4; // inject reminder every N team-lead wakeups
+
 export class Orchestrator extends EventEmitter {
   private taskGraph: TaskGraph | null = null;
   private budgetTracker: BudgetTracker | null = null;
-  private agentPool: AgentPool | null = null;
   private modelRouter: ModelRouter | null = null;
   private teamLead: TeamLeadAgent | null = null;
   private internalBus = new EventEmitter();
@@ -38,6 +63,8 @@ export class Orchestrator extends EventEmitter {
   private providers = new Map<string, LLMProvider>();
   private claudeCodeBridge: ClaudeCodeBridge | null = null;
   private workspaceWatcher = new WorkspaceWatcher();
+  private activeAgents = new Map<string, ActiveAgentInfo>();
+  private teamLeadWakeCount = 0;
 
   constructor(private readonly workspaceManager: WorkspaceManager) {
     super();
@@ -111,15 +138,6 @@ export class Orchestrator extends EventEmitter {
     // Model router
     this.modelRouter = new ModelRouter(config);
 
-    // Agent pool
-    this.agentPool = new AgentPool(config.defaults.maxConcurrentAgents);
-    this.agentPool.on('agent:spawned', (data) => this.emit('agent:spawned', data));
-    this.agentPool.on('agent:output', (data) => this.emit('agent:output', data));
-    this.agentPool.on('agent:completed', (data: { agentId: string; taskId: string; result: AgentResult }) => {
-      this.handleAgentCompleted(data.agentId, data.taskId, data.result);
-    });
-    this.agentPool.on('agent:terminated', (data) => this.emit('agent:terminated', data));
-
     // Claude Code bridge (optional)
     if (config.claudeCode?.enabled) {
       this.claudeCodeBridge = new ClaudeCodeBridge({
@@ -156,6 +174,7 @@ export class Orchestrator extends EventEmitter {
       this.budgetTracker,
       Number.MAX_SAFE_INTEGER, // Team Lead is long-running; no artificial call limit
       this.claudeCodeBridge ?? undefined,
+      this.makeAgentRunner(),
     );
 
     // Start workspace watcher
@@ -175,9 +194,10 @@ export class Orchestrator extends EventEmitter {
   }
 
   private async runLoop(initialMessage: string): Promise<void> {
-    if (!this.teamLead || !this.taskGraph || !this.budgetTracker || !this.agentPool) return;
+    if (!this.teamLead || !this.taskGraph || !this.budgetTracker) return;
 
-    // Give the Team Lead its initial message and run one turn
+    // Give the Team Lead its initial message and run one turn.
+    // The team lead may call dispatch_task (synchronous) multiple times within this turn.
     await this.teamLead.runTurn(initialMessage);
 
     while (!this.stopped && !this.budgetTracker.isExhausted()) {
@@ -186,31 +206,39 @@ export class Orchestrator extends EventEmitter {
         continue;
       }
 
-      // Dispatch ready tasks
-      const ready = this.taskGraph.getReadyTasks();
-      for (const task of ready) {
-        if (this.stopped || this.budgetTracker.isExhausted()) break;
-        await this.dispatchTask(task);
-      }
-
-      // Check for project completion
       const allTasks = this.taskGraph.getAllTasks();
+
+      // All tasks terminal → done
       if (allTasks.length > 0 && allTasks.every((t) => t.status === 'done' || t.status === 'failed')) {
         log.info('All tasks terminal — project complete');
         await this.finalize();
         return;
       }
 
-      // Wait for next event (agent completion or team lead wake), with 5s fallback.
-      // AbortController ensures the once() listener is removed when the timeout fires first,
-      // preventing listener accumulation across loop iterations.
+      // Count actionable work for team lead
+      const pendingCount = allTasks.filter((t) => t.status === 'pending').length;
+      const reviewCount  = allTasks.filter((t) => t.status === 'review').length;
+      const hasWork = allTasks.length === 0 || pendingCount > 0 || reviewCount > 0;
+
+      if (hasWork) {
+        const summary = allTasks.length === 0
+          ? 'No tasks have been created yet. Create the initial task graph now.'
+          : `Status: ${pendingCount} task(s) pending dispatch, ${reviewCount} awaiting review, ${allTasks.filter((t) => t.status === 'done').length} done.`;
+        await this.wakeTeamLead(summary);
+      } else {
+        // Tasks are in-progress inside a dispatch_task call — shouldn't normally reach here,
+        // but guard with a short sleep so the loop doesn't spin.
+        await sleep(2000);
+      }
+
+      // Small yield between turns; internalBus.emit('event') from inject/pause also wakes this.
       {
         const ac = new AbortController();
-        const timer = setTimeout(() => ac.abort(), 5000);
+        const timer = setTimeout(() => ac.abort(), 3000);
         try {
           await once(this.internalBus, 'event', { signal: ac.signal });
         } catch {
-          // AbortError (timeout) — loop again
+          // AbortError (timeout) — continue
         } finally {
           clearTimeout(timer);
         }
@@ -223,99 +251,100 @@ export class Orchestrator extends EventEmitter {
     }
   }
 
-  private async dispatchTask(task: Task): Promise<void> {
-    if (!this.taskGraph || !this.modelRouter || !this.agentPool || !this.config) return;
+  /**
+   * Creates the RunAgentFn passed to TeamLeadAgent.
+   * When the team lead calls dispatch_task, this function runs a worker agent
+   * synchronously and returns the result directly to the team lead's conversation.
+   */
+  private makeAgentRunner(): RunAgentFn {
+    return async (task: Task, instruction?: string): Promise<AgentResult> => {
+      if (!this.modelRouter || !this.config || !this.budgetTracker || !this.taskGraph) {
+        return { success: false, summary: 'Orchestrator not ready', artifacts: [], tokensUsed: { input: 0, output: 0 } };
+      }
 
-    const role: AgentRole = task.type; // TaskType values are a subset of AgentRole — no cast needed
-    let model;
-    try {
-      model = this.modelRouter.selectModel(role, task.assignedModel);
-    } catch (err) {
-      log.error({ taskId: task.id, err }, 'No model available for task type');
-      return;
-    }
+      const role: AgentRole = task.type;
+      let model;
+      try {
+        model = this.modelRouter.selectModel(role, task.assignedModel);
+      } catch (err) {
+        log.error({ taskId: task.id, err }, 'No model for task type');
+        return { success: false, summary: `No model for role ${role}`, artifacts: [], tokensUsed: { input: 0, output: 0 } };
+      }
 
-    this.taskGraph.updateTask(task.id, {
-      status: 'assigned',
-      assignedModel: model.id,
-    });
-    // onTaskUpdated callback already broadcasts the full task — no separate emit needed.
+      this.taskGraph.updateTask(task.id, { assignedModel: model.id });
 
-    const provider = this.getProvider(model.id);
-    if (!provider) {
-      log.error({ modelId: model.id }, 'No provider for model');
-      this.taskGraph.updateTask(task.id, { status: 'failed' });
-      return;
-    }
+      const provider = this.getProvider(model.id);
+      const agentId = generateId('agent');
 
-    await this.agentPool.spawn(
-      task,
-      this.projectRoot,
-      this.projectName,
-      (t, ctx) => createWorkerAgent(t, ctx, model, provider, this.config!.defaults.maxToolCallsPerTurn),
-    );
-
-    this.taskGraph.updateTask(task.id, { status: 'in-progress' });
-  }
-
-  private handleAgentCompleted(
-    agentId: string,
-    taskId: string,
-    result: AgentResult,
-  ): void {
-    if (!this.taskGraph || !this.budgetTracker || !this.config) return;
-
-    const task = this.taskGraph.getTask(taskId);
-    if (!task) return;
-
-    const model = this.config.models.find((m) => m.id === task.assignedModel);
-    if (model) {
-      const budgetUpdate = this.budgetTracker.recordUsage(
+      const agentInfo: ActiveAgentInfo = {
         agentId,
-        model,
-        result.tokensUsed.input,
-        result.tokensUsed.output,
-      );
-      this.emit('budget:update', budgetUpdate);
-      if (budgetUpdate.justWarned) {
-        log.warn({ cost: budgetUpdate.totalCost }, 'Budget warning threshold reached');
+        taskId: task.id,
+        role: task.type,
+        modelId: model.id,
+        startTime: Date.now(),
+      };
+      this.activeAgents.set(agentId, agentInfo);
+      this.emit('agent:spawned', agentInfo);
+
+      const context: AgentContext = {
+        agentId,
+        taskId: task.id,
+        workspaceRoot: this.projectRoot,
+        projectName: this.projectName,
+        emitOutput: (chunk: string) => this.emit('agent:output', { agentId, chunk }),
+      };
+
+      const initialMessage = instruction
+        ? `${task.description}\n\n## Team Lead Instructions\n${instruction}`
+        : task.description;
+
+      const agent = createWorkerAgent(task, context, model, provider, this.config.defaults.maxToolCallsPerTurn);
+
+      let result: AgentResult;
+      try {
+        log.info({ agentId, taskId: task.id, role }, 'Worker agent starting');
+        result = await agent.run(initialMessage);
+        log.info({ agentId, success: result.success }, 'Worker agent completed');
+      } catch (err) {
+        log.error({ agentId, err }, 'Worker agent threw exception');
+        result = {
+          success: false,
+          summary: (err as Error).message,
+          artifacts: [],
+          tokensUsed: { input: 0, output: 0 },
+          error: (err as Error).message,
+        };
       }
-    }
 
-    if (result.success) {
-      this.taskGraph.updateTask(taskId, {
-        status: 'review',
-        artifacts: result.artifacts,
-        result: {
-          success: true,
-          summary: result.summary,
-          artifacts: result.artifacts,
-          tokensUsed: result.tokensUsed,
-          cost: 0,
-          durationMs: 0,
-        },
-      });
-    } else {
-      const task2 = this.taskGraph.getTask(taskId)!;
-      const newAttempts = task2.attempts + 1;
-      if (newAttempts >= task2.maxAttempts) {
-        this.taskGraph.updateTask(taskId, { status: 'failed', attempts: newAttempts });
-      } else {
-        this.taskGraph.updateTask(taskId, { status: 'pending', attempts: newAttempts });
+      this.activeAgents.delete(agentId);
+      this.emit('agent:completed', { agentId, taskId: task.id, result });
+
+      // Record budget usage
+      const modelCfg = this.config.models.find((m) => m.id === model.id);
+      if (modelCfg) {
+        const budgetUpdate = this.budgetTracker.recordUsage(
+          agentId,
+          modelCfg,
+          result.tokensUsed.input,
+          result.tokensUsed.output,
+        );
+        this.emit('budget:update', budgetUpdate);
+        if (budgetUpdate.justWarned) {
+          log.warn({ cost: budgetUpdate.totalCost }, 'Budget warning threshold reached');
+        }
       }
-    }
 
-    this.emit('agent:completed', { agentId, taskId, result });
-
-    // Wake Team Lead to review
-    void this.wakeTeamLead(`Agent ${agentId} completed task ${taskId}. Result: ${result.success ? 'SUCCESS' : 'FAILED'}. Summary: ${result.summary}`);
-
-    this.internalBus.emit('event');
+      return result;
+    };
   }
 
   private async wakeTeamLead(message: string): Promise<void> {
     if (!this.teamLead || this.paused || this.stopped) return;
-    await this.teamLead.runTurn(message);
+    this.teamLeadWakeCount++;
+    const fullMessage = this.teamLeadWakeCount % REMINDER_INTERVAL === 0
+      ? `${TEAM_LEAD_REMINDER}\n\n---\n${message}`
+      : message;
+    await this.teamLead.runTurn(fullMessage);
     this.internalBus.emit('event');
   }
 
@@ -372,7 +401,7 @@ export class Orchestrator extends EventEmitter {
   }
 
   getActiveAgents() {
-    return this.agentPool?.getActive() ?? [];
+    return [...this.activeAgents.values()];
   }
 
   getBudget() {

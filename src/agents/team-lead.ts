@@ -15,6 +15,13 @@ import { formatInboxFile } from '../tools/claude-code.js';
 
 const log = createLogger({ module: 'team-lead' });
 
+/**
+ * Function provided by the orchestrator that runs a worker agent on a task.
+ * The call is synchronous from the team lead's perspective — it blocks until
+ * the agent completes and returns the result for immediate review.
+ */
+export type RunAgentFn = (task: import('../config/schema.js').Task, instruction?: string) => Promise<AgentResult>;
+
 export class TeamLeadAgent extends BaseAgent {
   private _tools: ToolRegistry;
 
@@ -26,6 +33,7 @@ export class TeamLeadAgent extends BaseAgent {
     private readonly budgetTracker: BudgetTracker,
     maxToolCalls: number,
     private readonly claudeCodeBridge?: ClaudeCodeBridge,
+    private readonly runAgent?: RunAgentFn,
   ) {
     super(model, provider, context, maxToolCalls);
     this._tools = this.buildTools();
@@ -33,48 +41,51 @@ export class TeamLeadAgent extends BaseAgent {
 
   protected get systemPrompt(): string {
     return `You are the Team Lead for an autonomous software development project.
-Your job is to manage the project by creating tasks and reviewing results — NOT to implement anything yourself.
+You manage the project by directing worker agents — you never implement anything yourself.
 
-## Core Rule: NEVER implement work directly
-You MUST NOT write code, run builds, run tests, edit files, or execute shell commands to implement features.
-ALL implementation work must be delegated to worker agents via create_task.
-If you find yourself tempted to write a file or run npm/git/python yourself, stop and create a task instead.
-The only exception: using file_read or directory_list to read the spec or review a worker's output.
+## Strict Workflow — follow this for every task
 
-## Your responsibilities
-1. Read the project spec and break it into concrete tasks with clear dependencies.
-2. Dispatch tasks to workers — create_task spawns a fresh focused agent for each piece of work.
-3. Review completed work (status: review) — read the relevant files, then approve_result or reject_result.
-4. Reject with specific actionable feedback so the reworked task succeeds next time.
-5. Escalate to Claude Code when a worker has failed 2+ times on the same task.
-6. Maintain architectural consistency — reject work that contradicts prior decisions.
+### Step 1: PLAN
+- Call list_tasks to see current project state.
+- Call create_task for any missing tasks, with clear descriptions and correct dependencies.
+- Tasks must be created in dependency order: architecture → implement → test → review.
+
+### Step 2: DISPATCH
+- For each pending task whose dependencies are done, call dispatch_task.
+- Provide an "instruction" field with precise guidance: what to build, what patterns to follow,
+  what the agent should verify before calling report_result.
+- dispatch_task runs the worker agent and returns when it finishes — you will see the result immediately.
+- While the agent runs, you are the user: the instruction you provide IS the brief.
+  Make it specific enough that the agent does not need to ask clarifying questions.
+
+### Step 3: REVIEW
+- dispatch_task returns the agent's result (success/failure + summary).
+- Read the relevant output files with file_read to verify the work is correct.
+- If acceptable: call approve_result — this marks the task done and unblocks dependents.
+- If not acceptable: call reject_result with specific, actionable feedback.
+  The task will be re-queued; dispatch it again after.
+
+### Repeat Steps 1–3 until all tasks are done.
+
+## Hard Rules
+- NEVER write code, edit files, run shell commands, or implement anything yourself.
+- dispatch_task is the ONLY way to execute work. Use it for every task.
+- Do not dispatch a task if its dependencies are not yet done (status ≠ done).
+- Always approve_result or reject_result after each dispatch_task call — never leave tasks in "review".
 
 ## Task Types
-- architecture: System design and tech stack decisions
-- implement: Write code for a specific component or feature
-- test: Write and run tests for a specific component
-- review: Code review of a specific component
-- debug: Diagnose and fix a specific failure
-- devops: Build scripts, Docker, CI/CD configuration
-- docs: Documentation
-- integrate: Wire components together
-- validate: End-to-end validation
+architecture | implement | test | review | debug | devops | docs | integrate | validate
 
-## Dependency ordering
-An implement task should depend on its architecture task.
-A test task should depend on its implement task.
-A review task should depend on what it reviews.
-Integration tasks should depend on all components they integrate.
-
-## Tool usage
-- create_task: Delegate work to a worker agent. Use this for ALL implementation.
-- approve_result / reject_result: Review tasks in "review" status.
-- update_task: Change priority or unblock a task.
-- query_budget: Check remaining budget before spawning expensive work.
-- file_read / directory_list: Read the spec or review worker output (read-only).
-- escalate_to_claude_code: For tasks that have failed 2+ times.
-
-Be decisive. Keep the project moving by creating tasks and reviewing results promptly.`;
+## Tool Reference
+- list_tasks           — see all tasks and statuses
+- create_task          — create a new task with dependencies
+- dispatch_task        — run a worker agent on a pending task (blocks until done)
+- approve_result       — mark a reviewed task as done
+- reject_result        — send a task back for rework with feedback
+- update_task          — change priority or status of a task
+- query_budget         — check remaining budget
+- file_read / directory_list — read workspace files to review agent output
+- escalate_to_claude_code — for tasks that have failed 2+ times`;
   }
 
   protected get tools(): ToolRegistry {
@@ -111,7 +122,9 @@ Be decisive. Keep the project moving by creating tasks and reviewing results pro
     registry.register(new GitLogTool());
 
     // Team Lead management tools
+    registry.register(this.makeListTasksTool());
     registry.register(this.makeCreateTaskTool());
+    registry.register(this.makeDispatchTaskTool());
     registry.register(this.makeUpdateTaskTool());
     registry.register(this.makeCancelTaskTool());
     registry.register(this.makeApproveResultTool());
@@ -124,6 +137,106 @@ Be decisive. Keep the project moving by creating tasks and reviewing results pro
     }
 
     return registry;
+  }
+
+  private makeListTasksTool(): Tool {
+    const graph = this.taskGraph;
+    return {
+      name: 'list_tasks',
+      description: 'List all tasks in the project with their current status, type, and dependencies.',
+      parameters: { type: 'object', properties: {}, required: [] },
+      async execute(): Promise<ToolResult> {
+        const tasks = graph.getAllTasks();
+        if (tasks.length === 0) return { success: true, output: 'No tasks yet.' };
+        const lines = tasks.map((t) => {
+          const deps = t.dependencies.length ? ` (deps: ${t.dependencies.join(', ')})` : '';
+          const attempts = t.attempts > 0 ? ` [attempt ${t.attempts}/${t.maxAttempts}]` : '';
+          return `[${t.id}] ${t.status.toUpperCase().padEnd(11)} | ${t.type.padEnd(12)} | ${t.title}${deps}${attempts}`;
+        });
+        return { success: true, output: lines.join('\n') };
+      },
+    };
+  }
+
+  private makeDispatchTaskTool(): Tool {
+    const graph = this.taskGraph;
+    const runAgent = this.runAgent;
+    return {
+      name: 'dispatch_task',
+      description:
+        'Run a worker agent on a pending task. Blocks until the agent finishes and returns the result for you to review. ' +
+        'After this returns, call approve_result or reject_result.',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskId: { type: 'string', description: 'ID of the pending task to dispatch' },
+          instruction: {
+            type: 'string',
+            description:
+              'Specific guidance for the agent: what to build, patterns to follow, how to verify success. ' +
+              'Be precise — the agent cannot ask follow-up questions.',
+          },
+        },
+        required: ['taskId'],
+      },
+      async execute(params: unknown): Promise<ToolResult> {
+        const { taskId, instruction } = params as { taskId: string; instruction?: string };
+
+        const task = graph.getTask(taskId);
+        if (!task) return { success: false, output: '', error: `Task ${taskId} not found` };
+        if (task.status !== 'pending') {
+          return { success: false, output: '', error: `Task ${taskId} cannot be dispatched — status is "${task.status}", must be "pending"` };
+        }
+
+        // Verify dependencies are all done
+        const blockedBy = task.dependencies.filter((depId) => {
+          const dep = graph.getTask(depId);
+          return !dep || dep.status !== 'done';
+        });
+        if (blockedBy.length > 0) {
+          return { success: false, output: '', error: `Task ${taskId} is blocked by unfinished dependencies: ${blockedBy.join(', ')}` };
+        }
+
+        if (!runAgent) {
+          return { success: false, output: '', error: 'Agent runner not configured — cannot dispatch' };
+        }
+
+        graph.updateTask(taskId, { status: 'in-progress' });
+
+        const result = await runAgent(task, instruction);
+
+        const freshTask = graph.getTask(taskId)!;
+        const newAttempts = freshTask.attempts + 1;
+
+        if (result.success) {
+          graph.updateTask(taskId, {
+            status: 'review',
+            attempts: newAttempts,
+            artifacts: result.artifacts,
+            result: {
+              success: true,
+              summary: result.summary,
+              artifacts: result.artifacts,
+              tokensUsed: result.tokensUsed,
+              cost: 0,
+              durationMs: 0,
+            },
+          });
+        } else {
+          const nextStatus = newAttempts >= freshTask.maxAttempts ? 'failed' : 'pending';
+          graph.updateTask(taskId, { status: nextStatus, attempts: newAttempts });
+        }
+
+        const statusLine = result.success
+          ? `SUCCESS — task is now in "review" status. Call approve_result or reject_result.`
+          : `FAILED (attempt ${newAttempts}/${freshTask.maxAttempts}) — task reset to "${graph.getTask(taskId)?.status}".`;
+
+        return {
+          success: true,
+          output: `${statusLine}\n\nAgent summary: ${result.summary}\nArtifacts: ${result.artifacts.join(', ') || 'none'}${result.error ? `\nError: ${result.error}` : ''}`,
+        };
+      },
+    };
   }
 
   private makeCreateTaskTool(): Tool {
