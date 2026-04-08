@@ -38,7 +38,9 @@ export class ShellTool implements Tool {
     let cwd = context.workspaceRoot;
     if (workingDir) {
       const resolved = path.resolve(context.workspaceRoot, workingDir);
-      if (!resolved.startsWith(context.workspaceRoot)) {
+      const resolvedRoot = path.resolve(context.workspaceRoot);
+      const safe = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+      if (resolved !== resolvedRoot && !resolved.startsWith(safe)) {
         return {
           success: false,
           output: '',

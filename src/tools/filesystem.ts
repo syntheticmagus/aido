@@ -10,8 +10,10 @@ function clampToWorkspace(
   inputPath: string,
   workspaceRoot: string,
 ): string | null {
+  const resolvedRoot = path.resolve(workspaceRoot); // normalise drive letter on Windows
   const resolved = path.resolve(workspaceRoot, inputPath);
-  if (!resolved.startsWith(workspaceRoot)) return null;
+  const safe = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
+  if (resolved !== resolvedRoot && !resolved.startsWith(safe)) return null;
   return resolved;
 }
 
