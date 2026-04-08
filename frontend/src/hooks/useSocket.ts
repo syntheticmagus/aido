@@ -25,10 +25,7 @@ export function useSocket() {
     s.on('disconnect', () => setConnected(false));
 
     s.on('task:created', (task: Task) => upsertTask(task));
-    s.on('task:updated', (data: Partial<Task> & { id: string }) => {
-      const existing = useAppStore.getState().tasks[data.id];
-      if (existing) upsertTask({ ...existing, ...data });
-    });
+    s.on('task:updated', (task: Task) => upsertTask(task));
 
     s.on('agent:spawned', (agent: AgentInfo) => upsertAgent(agent));
     s.on('agent:output', (data: { agentId: string; chunk: string }) =>

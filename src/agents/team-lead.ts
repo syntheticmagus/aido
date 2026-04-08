@@ -1,8 +1,7 @@
 import { BaseAgent } from './base-agent.js';
 import { ToolRegistry } from '../tools/registry.js';
-import { FileReadTool, FileWriteTool, FilePatchTool, FileSearchTool, DirectoryListTool } from '../tools/filesystem.js';
-import { ShellTool } from '../tools/shell.js';
-import { GitCommitTool, GitDiffTool, GitLogTool } from '../tools/git.js';
+import { FileReadTool, FileSearchTool, DirectoryListTool } from '../tools/filesystem.js';
+import { GitDiffTool, GitLogTool } from '../tools/git.js';
 import { TaskGraph } from '../orchestrator/task-graph.js';
 import { BudgetTracker } from '../orchestrator/budget-tracker.js';
 import { createLogger } from '../utils/logger.js';
@@ -34,33 +33,48 @@ export class TeamLeadAgent extends BaseAgent {
 
   protected get systemPrompt(): string {
     return `You are the Team Lead for an autonomous software development project.
-Your job is to:
-1. Read the project spec and break it into concrete tasks with dependencies.
-2. Monitor agent progress and review completed work.
-3. Approve good work, reject poor work with specific feedback, and retry failed tasks.
-4. Escalate hard problems if the Claude Code bridge is available.
-5. Maintain architectural consistency and code quality across all agents.
+Your job is to manage the project by creating tasks and reviewing results — NOT to implement anything yourself.
+
+## Core Rule: NEVER implement work directly
+You MUST NOT write code, run builds, run tests, edit files, or execute shell commands to implement features.
+ALL implementation work must be delegated to worker agents via create_task.
+If you find yourself tempted to write a file or run npm/git/python yourself, stop and create a task instead.
+The only exception: using file_read or directory_list to read the spec or review a worker's output.
+
+## Your responsibilities
+1. Read the project spec and break it into concrete tasks with clear dependencies.
+2. Dispatch tasks to workers — create_task spawns a fresh focused agent for each piece of work.
+3. Review completed work (status: review) — read the relevant files, then approve_result or reject_result.
+4. Reject with specific actionable feedback so the reworked task succeeds next time.
+5. Escalate to Claude Code when a worker has failed 2+ times on the same task.
+6. Maintain architectural consistency — reject work that contradicts prior decisions.
 
 ## Task Types
 - architecture: System design and tech stack decisions
-- implement: Write code
-- test: Write and run tests
-- review: Code review
-- debug: Diagnose and fix failures
-- devops: Build, Docker, CI/CD
+- implement: Write code for a specific component or feature
+- test: Write and run tests for a specific component
+- review: Code review of a specific component
+- debug: Diagnose and fix a specific failure
+- devops: Build scripts, Docker, CI/CD configuration
 - docs: Documentation
-- integrate: Bring components together
+- integrate: Wire components together
 - validate: End-to-end validation
 
-## When to create tasks
-Create tasks in logical dependency order. An implement task should depend on its architecture task.
-A test task should depend on its implement task. A review task should depend on what it reviews.
+## Dependency ordering
+An implement task should depend on its architecture task.
+A test task should depend on its implement task.
+A review task should depend on what it reviews.
+Integration tasks should depend on all components they integrate.
 
 ## Tool usage
-Use create_task to add new tasks. Use update_task to change status (approve → done, reject → pending).
-Use query_budget to check remaining budget before spawning expensive work.
+- create_task: Delegate work to a worker agent. Use this for ALL implementation.
+- approve_result / reject_result: Review tasks in "review" status.
+- update_task: Change priority or unblock a task.
+- query_budget: Check remaining budget before spawning expensive work.
+- file_read / directory_list: Read the spec or review worker output (read-only).
+- escalate_to_claude_code: For tasks that have failed 2+ times.
 
-Be decisive and keep the project moving forward.`;
+Be decisive. Keep the project moving by creating tasks and reviewing results promptly.`;
   }
 
   protected get tools(): ToolRegistry {
@@ -89,14 +103,10 @@ Be decisive and keep the project moving forward.`;
   private buildTools(): ToolRegistry {
     const registry = new ToolRegistry();
 
-    // Core tools
+    // Read-only tools — team lead reviews but does not implement
     registry.register(new FileReadTool());
-    registry.register(new FileWriteTool());
-    registry.register(new FilePatchTool());
     registry.register(new FileSearchTool());
     registry.register(new DirectoryListTool());
-    registry.register(new ShellTool());
-    registry.register(new GitCommitTool());
     registry.register(new GitDiffTool());
     registry.register(new GitLogTool());
 

@@ -95,6 +95,7 @@ export class Orchestrator extends EventEmitter {
     this.taskGraph.setPersistPath(graphPath);
     this.taskGraph.resetInterruptedTasks(); // recover from crash
     this.taskGraph.onTaskCreated = (task) => this.emit('task:created', task);
+    this.taskGraph.onTaskUpdated = (task) => this.emit('task:updated', task);
 
     // Budget
     const budgetPath = path.join(this.projectRoot, '.aido', 'budget.json');
@@ -153,7 +154,7 @@ export class Orchestrator extends EventEmitter {
       },
       this.taskGraph,
       this.budgetTracker,
-      config.defaults.maxToolCallsPerTurn,
+      Number.MAX_SAFE_INTEGER, // Team Lead is long-running; no artificial call limit
       this.claudeCodeBridge ?? undefined,
     );
 

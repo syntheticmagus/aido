@@ -13,6 +13,8 @@ export class TaskGraph {
 
   /** Called whenever a task is created. Set by the orchestrator to forward events. */
   onTaskCreated?: (task: Task) => void;
+  /** Called whenever a task is updated. Set by the orchestrator to forward events. */
+  onTaskUpdated?: (task: Task) => void;
 
   static fromFile(filePath: string): TaskGraph {
     const graph = new TaskGraph();
@@ -53,6 +55,7 @@ export class TaskGraph {
     if (!task) throw new Error(`Task ${id} not found`);
     Object.assign(task, updates, { updatedAt: timestamp() });
     this.persist();
+    this.onTaskUpdated?.(task);
   }
 
   getTask(id: string): Task | undefined {

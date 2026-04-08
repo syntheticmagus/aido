@@ -13,7 +13,7 @@ export function FileExplorer({ projectName }: FileExplorerProps) {
 
   const fetchFiles = async () => {
     try {
-      const res = await fetch(`/artifacts/${projectName}/`);
+      const res = await fetch(`/artifacts/${projectName}`);
       if (res.ok) {
         const data = await res.json() as { entries: string[] };
         setFiles(data.entries ?? []);

@@ -5,6 +5,18 @@ import path from 'node:path';
 export function createArtifactsRouter(workspaceRoot: string) {
   const router = Router();
 
+  // GET /artifacts/:projectName — list the project root directory
+  router.get('/:projectName', async (req, res) => {
+    const { projectName } = req.params;
+    const projectRoot = path.resolve(workspaceRoot, projectName);
+    try {
+      const entries = await fs.readdir(projectRoot);
+      res.json({ type: 'directory', entries: entries.filter((e) => e !== '.aido' && e !== '.git') });
+    } catch {
+      res.status(404).json({ error: 'Project not found' });
+    }
+  });
+
   // GET /artifacts/:projectName/*filePath
   router.get('/:projectName/*filePath', async (req, res) => {
     const params = req.params as unknown as { projectName: string; filePath: string | string[] };

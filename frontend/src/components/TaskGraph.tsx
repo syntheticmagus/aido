@@ -131,7 +131,7 @@ export function TaskGraph({ tasks, onTaskSelect }: TaskGraphProps) {
       className="bg-gray-950"
     >
       <Background color="#374151" />
-      <Controls className="[&>button]:bg-gray-800 [&>button]:border-gray-600 [&>button]:text-gray-300" />
+      <Controls className="[&>button]:bg-gray-900 [&>button]:border-blue-700 [&>button]:text-blue-400 [&>button:hover]:bg-blue-900 [&>button:hover]:text-blue-300" />
     </ReactFlow>
   );
 }
