@@ -201,7 +201,12 @@ export abstract class BaseAgent {
     try {
       const result = await tool.execute(toolUse.input, this.context);
       this.log.info(
-        { tool: toolUse.name, success: result.success, error: result.error },
+        {
+          tool: toolUse.name,
+          success: result.success,
+          error: result.error,
+          output: result.success ? undefined : result.output?.slice(0, 500),
+        },
         'Tool completed',
       );
       return result;

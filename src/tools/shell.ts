@@ -1,8 +1,34 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Tool, ToolResult, AgentContext } from './types.js';
 
 const MAX_OUTPUT_BYTES = 1_048_576; // 1 MB
+
+/**
+ * Pick the best available shell for the current platform.
+ *
+ * On Windows, LLMs generate POSIX commands (ls, cat, mkdir -p, &&, ||) that
+ * fail or behave incorrectly in cmd.exe and partly in PowerShell 5.x.
+ * Git for Windows bundles a full bash that handles all of these correctly.
+ * PowerShell 7 (pwsh) also works but is an optional install.
+ * We fall back to PowerShell 5.x (powershell.exe) which covers most common
+ * commands even though it lacks && / || chain operators.
+ */
+function resolveShell(): string | true {
+  if (process.platform !== 'win32') return true; // /bin/sh on POSIX
+  const candidates = [
+    'C:/Program Files/Git/bin/bash.exe',  // Git for Windows (most compatible)
+    'C:/Program Files (x86)/Git/bin/bash.exe',
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  // Fall back to PowerShell 5.x — better than cmd.exe for POSIX-ish commands
+  return 'powershell.exe';
+}
+
+const SHELL = resolveShell();
 
 interface ShellExecParams {
   command: string;
@@ -55,7 +81,7 @@ export class ShellTool implements Tool {
       let stderrBuf = '';
       let truncated = false;
 
-      const proc = spawn(command, { shell: true, cwd });
+      const proc = spawn(command, { shell: SHELL, cwd });
 
       const timer = setTimeout(() => {
         proc.kill('SIGTERM');
