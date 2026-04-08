@@ -11,6 +11,9 @@ export class TaskGraph {
   private tasks = new Map<string, Task>();
   private persistPath: string | null = null;
 
+  /** Called whenever a task is created. Set by the orchestrator to forward events. */
+  onTaskCreated?: (task: Task) => void;
+
   static fromFile(filePath: string): TaskGraph {
     const graph = new TaskGraph();
     graph.persistPath = filePath;
@@ -41,6 +44,7 @@ export class TaskGraph {
     };
     this.tasks.set(task.id, task);
     this.persist();
+    this.onTaskCreated?.(task);
     return task;
   }
 

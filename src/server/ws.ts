@@ -21,8 +21,16 @@ export function setupSocketHandlers(io: Server, orchestrator: Orchestrator): voi
   orchestrator.on('workspace:changed', (data) => io.emit('workspace:changed', data));
 
   io.on('connection', (socket: Socket) => {
-    // Send current state snapshot on connect.
-    socket.emit('project:status', { status: orchestrator.getStatus().status });
+    // Send full state snapshot so clients that connect mid-run catch up immediately.
+    const { status, projectName, budget } = orchestrator.getStatus();
+    socket.emit('project:status', { status, projectName });
+    if (budget) socket.emit('budget:update', budget);
+    for (const task of orchestrator.getTasks().tasks) {
+      socket.emit('task:created', task);
+    }
+    for (const agent of orchestrator.getActiveAgents()) {
+      socket.emit('agent:spawned', agent);
+    }
 
     socket.on('project:start', async (data: {
       modelsYaml: string;

@@ -94,6 +94,7 @@ export class Orchestrator extends EventEmitter {
     this.taskGraph = TaskGraph.fromFile(graphPath);
     this.taskGraph.setPersistPath(graphPath);
     this.taskGraph.resetInterruptedTasks(); // recover from crash
+    this.taskGraph.onTaskCreated = (task) => this.emit('task:created', task);
 
     // Budget
     const budgetPath = path.join(this.projectRoot, '.aido', 'budget.json');
