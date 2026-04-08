@@ -219,7 +219,7 @@ export class Orchestrator extends EventEmitter {
   private async dispatchTask(task: Task): Promise<void> {
     if (!this.taskGraph || !this.modelRouter || !this.agentPool || !this.config) return;
 
-    const role = task.type as AgentRole;
+    const role: AgentRole = task.type; // TaskType values are a subset of AgentRole — no cast needed
     let model;
     try {
       model = this.modelRouter.selectModel(role, task.assignedModel);

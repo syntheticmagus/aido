@@ -8,7 +8,7 @@ models:
     rateLimit:
       requestsPerMinute: 50
       tokensPerMinute: 400000
-    roles: [developer, reviewer, tester, debugger, docs]
+    roles: [implement, test, review, debug, docs, default]
     costPer1kInput: 0.003
     costPer1kOutput: 0.015
 
@@ -20,7 +20,7 @@ models:
     rateLimit:
       requestsPerMinute: 20
       tokensPerMinute: 100000
-    roles: [team-lead, architect]
+    roles: [team-lead, architecture]
     costPer1kInput: 0.015
     costPer1kOutput: 0.075
 
@@ -55,7 +55,7 @@ models:
     rateLimit:
       requestsPerMinute: 10
       tokensPerMinute: 50000
-    roles: [developer, reviewer, tester]
+    roles: [implement, test, review]
     costPer1kInput: 0
     costPer1kOutput: 0
 

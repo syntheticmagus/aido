@@ -1,14 +1,17 @@
 import { z } from 'zod';
 
 export const AgentRoleSchema = z.enum([
-  'team-lead',
-  'architect',
-  'developer',
-  'reviewer',
-  'tester',
-  'debugger',
+  'team-lead',    // reserved for the orchestrator's persistent planner
+  'architecture',
+  'implement',
+  'test',
+  'review',
+  'debug',
   'devops',
   'docs',
+  'integrate',
+  'validate',
+  'default',      // fallback: used when no dedicated model matches a role
 ]);
 export type AgentRole = z.infer<typeof AgentRoleSchema>;
 
@@ -72,21 +75,30 @@ export const BudgetSchema = z.object({
 });
 export type Budget = z.infer<typeof BudgetSchema>;
 
-export const ModelsConfigSchema = z.object({
-  models: z.array(ModelConfigSchema).min(1),
-  claudeCode: ClaudeCodeConfigSchema.optional(),
-  defaults: z
-    .object({
-      temperature: z.number().min(0).max(1).default(0.2),
-      retryAttempts: z.number().int().positive().default(3),
-      retryBackoffMs: z.number().positive().default(1000),
-      maxConcurrentAgents: z.number().int().positive().default(5),
-      maxToolCallsPerTurn: z.number().int().positive().default(50),
-      contextSummarizeEveryNTurns: z.number().int().positive().default(20),
-    })
-    .default({}),
-  budget: BudgetSchema,
-});
+export const ModelsConfigSchema = z
+  .object({
+    models: z.array(ModelConfigSchema).min(1),
+    claudeCode: ClaudeCodeConfigSchema.optional(),
+    defaults: z
+      .object({
+        temperature: z.number().min(0).max(1).default(0.2),
+        retryAttempts: z.number().int().positive().default(3),
+        retryBackoffMs: z.number().positive().default(1000),
+        maxConcurrentAgents: z.number().int().positive().default(5),
+        maxToolCallsPerTurn: z.number().int().positive().default(50),
+        contextSummarizeEveryNTurns: z.number().int().positive().default(20),
+      })
+      .default({}),
+    budget: BudgetSchema,
+  })
+  .refine(
+    (cfg) => cfg.models.some((m) => m.roles.includes('default')),
+    {
+      message:
+        "At least one model must include the 'default' role. " +
+        "This model is used as a fallback for any task type that has no dedicated model configured.",
+    },
+  );
 export type ModelsConfig = z.infer<typeof ModelsConfigSchema>;
 
 export const TaskResultSchema = z.object({

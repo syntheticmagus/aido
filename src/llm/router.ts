@@ -17,24 +17,27 @@ export class ModelRouter {
     }
   }
 
-  selectModel(taskType: AgentRole, preferredId?: string): ModelConfig {
+  selectModel(role: AgentRole, preferredId?: string): ModelConfig {
     this.refillBuckets();
 
     // 1. If preferred model is eligible and available, use it.
     if (preferredId) {
       const preferred = this.config.models.find((m) => m.id === preferredId);
-      if (preferred && preferred.roles.includes(taskType)) {
+      if (preferred && (preferred.roles.includes(role) || preferred.roles.includes('default'))) {
         return preferred;
       }
     }
 
-    // 2. Filter models eligible for this task type.
-    const eligible = this.config.models.filter((m) => m.roles.includes(taskType));
+    // 2. Filter models eligible for this role; fall back to 'default'-role models if none match.
+    let eligible = this.config.models.filter((m) => m.roles.includes(role));
     if (eligible.length === 0) {
-      throw new Error(`No model configured for role: ${taskType}`);
+      eligible = this.config.models.filter((m) => m.roles.includes('default'));
+    }
+    if (eligible.length === 0) {
+      throw new Error(`No model configured for role '${role}' and no default model is defined`);
     }
 
-    const isComplex = taskType === 'architect' || taskType === 'debugger';
+    const isComplex = role === 'architecture' || role === 'debug';
 
     // 3. Sort: models with headroom first, then by cost.
     const sorted = [...eligible].sort((a, b) => {
