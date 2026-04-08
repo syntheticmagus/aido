@@ -199,14 +199,19 @@ export class Orchestrator extends EventEmitter {
         return;
       }
 
-      // Wait for next event (agent completion or team lead wake)
-      try {
-        await Promise.race([
-          once(this.internalBus, 'event'),
-          sleep(5000), // poll every 5s as fallback
-        ]);
-      } catch {
-        // Timeout — loop again
+      // Wait for next event (agent completion or team lead wake), with 5s fallback.
+      // AbortController ensures the once() listener is removed when the timeout fires first,
+      // preventing listener accumulation across loop iterations.
+      {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 5000);
+        try {
+          await once(this.internalBus, 'event', { signal: ac.signal });
+        } catch {
+          // AbortError (timeout) — loop again
+        } finally {
+          clearTimeout(timer);
+        }
       }
     }
 
