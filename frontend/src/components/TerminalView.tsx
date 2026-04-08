@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+
+const EMPTY_OUTPUTS: string[] = [];
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -14,7 +16,7 @@ export function TerminalView({ agentId }: TerminalViewProps) {
   // Track how many chunks have been written to avoid re-writing on re-renders
   const writtenCountRef = useRef(0);
 
-  const outputs = useAppStore((s) => s.agentOutputs[agentId] ?? []);
+  const outputs = useAppStore((s) => s.agentOutputs[agentId] ?? EMPTY_OUTPUTS);
 
   // Initialize xterm on mount
   useEffect(() => {

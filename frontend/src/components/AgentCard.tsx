@@ -6,6 +6,8 @@ interface AgentCardProps {
   onClick: (agentId: string) => void;
 }
 
+const EMPTY_OUTPUTS: string[] = [];
+
 const ROLE_COLORS: Record<string, string> = {
   'team-lead': 'bg-purple-700',
   architect: 'bg-indigo-700',
@@ -18,7 +20,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export function AgentCard({ agent, onClick }: AgentCardProps) {
-  const outputs = useAppStore((s) => s.agentOutputs[agent.agentId] ?? []);
+  const outputs = useAppStore((s) => s.agentOutputs[agent.agentId] ?? EMPTY_OUTPUTS);
   const lastLines = outputs.slice(-5).join('').split('\n').slice(-5).join('\n');
   const elapsed = Math.round((Date.now() - agent.startTime) / 1000);
 
