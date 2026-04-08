@@ -2,6 +2,7 @@
   "name": "aido",
   "version": "0.1.0",
   "description": "Autonomous AI Development Orchestrator",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -17,7 +18,7 @@
     "@google/generative-ai": "^0.24.0",
     "chokidar": "^4.0.3",
     "express": "^5.0.1",
-    "glob": "^11.0.1",
+    "fast-glob": "^3.3.3",
     "nanoid": "^5.1.5",
     "node-pty": "^1.0.0",
     "openai": "^4.96.0",

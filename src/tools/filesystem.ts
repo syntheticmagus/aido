@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { glob } from 'glob';
+import fg from 'fast-glob';
 import { spawn } from 'node:child_process';
 import type { Tool, ToolResult, AgentContext } from './types.js';
 
@@ -258,7 +258,7 @@ async function nodeGrepFallback(
   maxResults: number,
 ): Promise<ToolResult> {
   const globPattern = fileGlob ? `${dir}/**/${fileGlob}` : `${dir}/**/*`;
-  const files = await glob(globPattern, { nodir: true, ignore: ['**/.git/**', '**/.aido/**'] });
+  const files = await fg(globPattern, { onlyFiles: true, ignore: ['**/.git/**', '**/.aido/**'] });
 
   const regex = new RegExp(pattern, 'g');
   const matches: string[] = [];
@@ -314,11 +314,10 @@ export class DirectoryListTool implements Tool {
       : context.workspaceRoot;
 
     const pattern = recursive ? `${dir}/**/*` : `${dir}/*`;
-    const files = await glob(pattern, {
-      nodir: false,
-      mark: true,
+    const files = await fg(pattern, {
+      onlyFiles: false,
       ignore: ['**/.git/**'],
-      maxDepth: recursive ? maxDepth : 1,
+      deep: recursive ? maxDepth : 1,
     });
 
     const relative = files
