@@ -8,7 +8,18 @@
       "Bash(npm run:*)",
       "Bash(npm start:*)",
       "Bash(curl -s http://localhost:3000/api/project/status)",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "Bash(curl -s http://192.168.0.107:8080/v1/models)",
+      "Bash(curl -s http://192.168.0.107:8080/api/models)",
+      "Bash(curl -s http://192.168.0.107:8080/ollama/v1/models)",
+      "Bash(curl -s http://192.168.0.107:8080/api/tags)",
+      "Bash(curl -s -H \"Authorization: Bearer ollama\" http://192.168.0.107:8080/ollama/v1/models)",
+      "Bash(curl -s --max-time 3 http://192.168.0.107:11434/api/tags)",
+      "Bash(curl -s --max-time 3 http://192.168.0.107:11434/v1/models)",
+      "Bash(npx tsx:*)",
+      "Bash(curl -s http://192.168.0.107:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen3.5:27b\",\"messages\":[{\"role\":\"user\",\"content\":\"What is 1+1?\"}],\"stream\":false}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
+      "Bash(curl -s http://192.168.0.107:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen3.5:27b\",\"messages\":[{\"role\":\"user\",\"content\":\"What is 1+1?\"}],\"stream\":true}')"
     ]
   }
 }

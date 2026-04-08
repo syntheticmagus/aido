@@ -42,14 +42,22 @@ models:
   #   costPer1kInput: 0.0001
   #   costPer1kOutput: 0.0004
 
-  # Uncomment to use a local Ollama model (free)
-  # - id: local-qwen
-  #   provider: local
-  #   baseUrl: http://localhost:11434
-  #   model: qwen2.5-coder:32b
-  #   roles: [developer]
-  #   costPer1kInput: 0
-  #   costPer1kOutput: 0
+  # Local Ollama model (free — no API key required)
+  # Use port 11434 (raw Ollama API), NOT the Open WebUI port (typically 8080/3000).
+  # Run `ollama list` on the host to see available models.
+  # Qwen3.x uses thinking-mode internally; token counts look inflated but it is
+  # harmless since local models cost $0.
+  - id: local-qwen
+    provider: local
+    baseUrl: http://localhost:11434   # or http://<LAN-IP>:11434 for a remote machine
+    model: qwen3.5:27b
+    maxTokens: 8192
+    rateLimit:
+      requestsPerMinute: 10
+      tokensPerMinute: 50000
+    roles: [developer, reviewer, tester]
+    costPer1kInput: 0
+    costPer1kOutput: 0
 
 claudeCode:
   enabled: false          # Set to true if Claude Code CLI is installed
