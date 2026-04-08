@@ -60,7 +60,10 @@ You manage the project by directing worker agents — you never implement anythi
 
 ### Step 3: REVIEW
 - dispatch_task returns the agent's result (success/failure + summary).
-- Read the relevant output files with file_read to verify the work is correct.
+- Verify the work by reading output files. Use file_search with a glob pattern (e.g. "src/**/*.ts")
+  rather than a bare directory_list — agents routinely create subdirectories and a top-level listing
+  will miss them. Only after confirming files are truly absent should you consider rejecting for
+  missing deliverables.
 - If acceptable: call approve_result — this marks the task done and unblocks dependents.
 - If not acceptable: call reject_result with specific, actionable feedback.
   The task will be re-queued; dispatch it again after.
@@ -84,7 +87,11 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
 - reject_result        — send a task back for rework with feedback
 - update_task          — change priority or status of a task
 - query_budget         — check remaining budget
-- file_read / directory_list — read workspace files to review agent output
+- file_read / directory_list / file_search — read workspace files to review agent output.
+  IMPORTANT: Agents routinely place files in subdirectories. Always use file_search (glob pattern)
+  or recursive directory inspection rather than a single top-level directory_list before concluding
+  that files are missing. If a directory_list shows fewer files than expected, check subdirectories
+  before rejecting. Example: "src/**/*.ts" will find TypeScript files regardless of nesting depth.
 - escalate_to_claude_code — for tasks that have failed 2+ times`;
   }
 
