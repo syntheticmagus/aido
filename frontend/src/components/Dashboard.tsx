@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../stores/appStore.ts';
 import { TaskGraph } from './TaskGraph.tsx';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { AgentCard } from './AgentCard.tsx';
 import { TerminalView } from './TerminalView.tsx';
 import { LogStream } from './LogStream.tsx';
@@ -104,7 +105,9 @@ export function Dashboard() {
       <div className="flex flex-1 overflow-hidden">
         {/* Task graph — 60% */}
         <div className="flex-[3] border-r border-gray-800 overflow-hidden">
-          <TaskGraph tasks={tasks} onTaskSelect={setSelectedTaskId} />
+          <ErrorBoundary>
+            <TaskGraph tasks={tasks} onTaskSelect={setSelectedTaskId} />
+          </ErrorBoundary>
         </div>
 
         {/* Right panel — 40% */}

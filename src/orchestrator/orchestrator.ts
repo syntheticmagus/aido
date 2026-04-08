@@ -239,7 +239,7 @@ export class Orchestrator extends EventEmitter {
       status: 'assigned',
       assignedModel: model.id,
     });
-    this.emit('task:updated', { id: task.id, status: 'assigned', assignedModel: model.id });
+    // onTaskUpdated callback already broadcasts the full task — no separate emit needed.
 
     const provider = this.getProvider(model.id);
     if (!provider) {
@@ -256,7 +256,6 @@ export class Orchestrator extends EventEmitter {
     );
 
     this.taskGraph.updateTask(task.id, { status: 'in-progress' });
-    this.emit('task:updated', { id: task.id, status: 'in-progress' });
   }
 
   private handleAgentCompleted(
@@ -306,7 +305,6 @@ export class Orchestrator extends EventEmitter {
       }
     }
 
-    this.emit('task:updated', { id: taskId, status: this.taskGraph.getTask(taskId)?.status });
     this.emit('agent:completed', { agentId, taskId, result });
 
     // Wake Team Lead to review
