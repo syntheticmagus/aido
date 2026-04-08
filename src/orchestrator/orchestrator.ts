@@ -189,8 +189,12 @@ export class Orchestrator extends EventEmitter {
       `create an initial task graph, and begin assigning work.\n\n` +
       `# Project Spec\n\n${specContent}`;
 
-    // Run orchestrator loop in background
-    void this.runLoop(initMessage);
+    // Run orchestrator loop in background — errors are caught internally so they
+    // never become unhandled rejections that would crash the server.
+    this.runLoop(initMessage).catch((err) => {
+      log.error({ err }, 'Orchestrator loop crashed unexpectedly');
+      this.setStatus('failed');
+    });
   }
 
   private async runLoop(initialMessage: string): Promise<void> {

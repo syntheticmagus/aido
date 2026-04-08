@@ -61,6 +61,17 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
 }
 
+// Prevent unhandled promise rejections from crashing the server.
+// The orchestrator runs many background async operations; a rejection
+// in any of them should be logged, not fatal.
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, 'Unhandled promise rejection — continuing');
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'Uncaught exception — continuing');
+});
+
 main().catch((err) => {
   logger.error({ err }, 'Fatal error during startup');
   process.exit(1);

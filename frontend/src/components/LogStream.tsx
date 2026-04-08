@@ -2,11 +2,18 @@ import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore.ts';
 import type { LogEntry } from '../types/index.ts';
 
+// Pino sends levels as numbers in production (10=trace,20=debug,30=info,40=warn,50=error,60=fatal)
 const LEVEL_COLORS: Record<string, string> = {
-  debug: 'text-gray-500',
-  info: 'text-blue-400',
-  warn: 'text-yellow-400',
-  error: 'text-red-400',
+  debug: 'text-gray-500',  '20': 'text-gray-500',
+  info:  'text-blue-400',  '30': 'text-blue-400',
+  warn:  'text-yellow-400','40': 'text-yellow-400',
+  error: 'text-red-400',   '50': 'text-red-400',
+  fatal: 'text-red-300',   '60': 'text-red-300',
+};
+
+const LEVEL_LABELS: Record<string, string> = {
+  '10': 'trace', '20': 'debug', '30': 'info',
+  '40': 'warn',  '50': 'error', '60': 'fatal',
 };
 
 export function LogStream() {
@@ -31,8 +38,11 @@ export function LogStream() {
   };
 
   const filtered = logs.filter((entry) => {
-    if (levelFilter && entry.level !== levelFilter) return false;
-    if (filter && !entry.msg?.toLowerCase().includes(filter.toLowerCase())) return false;
+    if (levelFilter) {
+      const label = LEVEL_LABELS[String(entry.level)] ?? String(entry.level);
+      if (label !== levelFilter) return false;
+    }
+    if (filter && !String(entry.msg ?? '').toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
   });
 
@@ -72,13 +82,16 @@ export function LogStream() {
 }
 
 function LogLine({ entry }: { entry: LogEntry }) {
-  const levelColor = LEVEL_COLORS[entry.level] ?? 'text-gray-400';
-  const time = new Date(entry.time).toLocaleTimeString();
+  const levelKey = String(entry.level ?? '');
+  const levelColor = LEVEL_COLORS[levelKey] ?? 'text-gray-400';
+  const levelLabel = LEVEL_LABELS[levelKey] ?? levelKey;
+  const time = new Date(typeof entry.time === 'number' ? entry.time : Date.now()).toLocaleTimeString();
+  const msg = entry.msg != null && typeof entry.msg !== 'object' ? String(entry.msg) : JSON.stringify(entry.msg);
   return (
     <div className="flex items-start gap-2 hover:bg-gray-900 px-1 rounded">
       <span className="text-gray-600 shrink-0">{time}</span>
-      <span className={`${levelColor} shrink-0 w-10`}>{entry.level}</span>
-      <span className="text-gray-300 break-all">{entry.msg}</span>
+      <span className={`${levelColor} shrink-0 w-10`}>{levelLabel}</span>
+      <span className="text-gray-300 break-all">{msg}</span>
     </div>
   );
 }

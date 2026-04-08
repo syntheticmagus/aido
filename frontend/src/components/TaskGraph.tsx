@@ -51,14 +51,17 @@ const NODE_W = 180;
 const NODE_H = 60;
 
 function layoutGraph(tasks: Task[]): { nodes: Node[]; edges: Edge[] } {
+  // Guard against malformed tasks (missing id, missing dependencies array)
+  const valid = tasks.filter((t) => t?.id && Array.isArray(t.dependencies));
+
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: 'LR', ranksep: 80, nodesep: 40 });
   g.setDefaultEdgeLabel(() => ({}));
 
-  for (const task of tasks) {
+  for (const task of valid) {
     g.setNode(task.id, { width: NODE_W, height: NODE_H });
   }
-  for (const task of tasks) {
+  for (const task of valid) {
     for (const dep of task.dependencies) {
       if (g.hasNode(dep)) {
         g.setEdge(dep, task.id);
@@ -68,17 +71,20 @@ function layoutGraph(tasks: Task[]): { nodes: Node[]; edges: Edge[] } {
 
   dagre.layout(g);
 
-  const nodes: Node[] = tasks.map((task) => {
+  const nodes: Node[] = valid.map((task, i) => {
     const pos = g.node(task.id);
+    // Dagre should always assign a position, but guard anyway
+    const x = pos ? pos.x - NODE_W / 2 : i * (NODE_W + 20);
+    const y = pos ? pos.y - NODE_H / 2 : 0;
     return {
       id: task.id,
       type: 'task',
-      position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 },
+      position: { x, y },
       data: { task } as unknown as TaskNodeData,
     };
   });
 
-  const edges: Edge[] = tasks.flatMap((task) =>
+  const edges: Edge[] = valid.flatMap((task) =>
     task.dependencies
       .filter((dep) => g.hasNode(dep))
       .map((dep) => ({
