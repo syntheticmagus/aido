@@ -15,6 +15,18 @@ import { formatInboxFile } from '../tools/claude-code.js';
 
 const log = createLogger({ module: 'team-lead' });
 
+/** Returns an error message if any required field is missing or blank, else null. */
+function requireFields(params: unknown, ...fields: string[]): string | null {
+  const p = params as Record<string, unknown>;
+  for (const field of fields) {
+    const val = p[field];
+    if (val === undefined || val === null || (typeof val === 'string' && !val.trim())) {
+      return `Missing required parameter: "${field}"`;
+    }
+  }
+  return null;
+}
+
 /**
  * Function provided by the orchestrator that runs a worker agent on a task.
  * The call is synchronous from the team lead's perspective — it blocks until
@@ -322,7 +334,13 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
         required: ['title', 'description', 'type'],
       },
       async execute(params: unknown): Promise<ToolResult> {
+        const missing = requireFields(params, 'title', 'description', 'type');
+        if (missing) return { success: false, output: '', error: missing };
+        const VALID_TYPES = ['architecture','implement','test','review','debug','devops','docs','integrate','validate'];
         const p = params as { title: string; description: string; type: string; dependencies?: string[]; priority?: number; maxAttempts?: number };
+        if (!VALID_TYPES.includes(p.type)) {
+          return { success: false, output: '', error: `Invalid type "${p.type}". Must be one of: ${VALID_TYPES.join(', ')}` };
+        }
         const task = graph.createTask({
           title: p.title,
           description: p.description,
@@ -353,6 +371,8 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
         required: ['taskId'],
       },
       async execute(params: unknown): Promise<ToolResult> {
+        const missing = requireFields(params, 'taskId');
+        if (missing) return { success: false, output: '', error: missing };
         const p = params as { taskId: string; status?: string; priority?: number };
         const task = graph.getTask(p.taskId);
         if (!task) return { success: false, output: '', error: `Task ${p.taskId} not found` };
@@ -373,6 +393,8 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
         required: ['taskId'],
       },
       async execute(params: unknown): Promise<ToolResult> {
+        const missing = requireFields(params, 'taskId');
+        if (missing) return { success: false, output: '', error: missing };
         const { taskId } = params as { taskId: string };
         graph.updateTask(taskId, { status: 'failed' });
         return { success: true, output: `Cancelled task ${taskId}` };

@@ -197,6 +197,19 @@ export abstract class BaseAgent {
         error: `Unknown tool: ${toolUse.name}`,
       };
     }
+    // Validate required parameters declared in the tool schema before calling execute().
+    // Some models (e.g. Gemma4) submit empty or partial tool calls; catch them here rather
+    // than letting them throw deep inside tool implementations.
+    const input = toolUse.input as Record<string, unknown>;
+    for (const field of tool.parameters.required ?? []) {
+      const val = input[field];
+      if (val === undefined || val === null || (typeof val === 'string' && !val.trim())) {
+        const err = `Missing required parameter: "${field}"`;
+        this.log.info({ tool: toolUse.name, success: false, error: err }, 'Tool completed');
+        return { success: false, output: '', error: err };
+      }
+    }
+
     this.log.info({ tool: toolUse.name, input: toolUse.input }, 'Executing tool');
     try {
       const result = await tool.execute(toolUse.input, this.context);
