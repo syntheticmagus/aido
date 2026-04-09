@@ -2,8 +2,34 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Tool, ToolResult, AgentContext } from './types.js';
+import type { TaskType } from '../config/schema.js';
 
 const MAX_OUTPUT_BYTES = 1_048_576; // 1 MB
+
+// ─── Shell write-pattern blocking ─────────────────────────────────────────────
+
+/**
+ * Roles that must not write files via shell commands.
+ * These agents have shell_exec for running/testing but not for editing.
+ */
+const SHELL_WRITE_RESTRICTED = new Set<TaskType>(['validate', 'review']);
+
+/**
+ * Patterns that indicate an attempt to write or overwrite files via shell.
+ * Ordered from most specific to most general.
+ */
+const SHELL_FILE_WRITE_PATTERNS: RegExp[] = [
+  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\b|--in-place\b)/m,                          // sed -i / --in-place
+  /\btee\b(?!\s+\/dev\/(?:null|stdout|stderr))\s+\S/m,                           // tee <file> (not /dev/null etc.)
+  /\bmv\s+\S+\s+\S/m,                                                            // mv src dst
+  /(?:^|[;&|({\n])\s*(?:cat|echo|printf)\b[^|<\n]*>>/m,                         // cmd >> file (append)
+  /(?:^|[;&|({\n])\s*(?:cat|echo|printf)\b[^|<\n]*(?<![>])>/m,                  // cmd > file (overwrite)
+  /(?:^|[;&|({\n])\s*>(?!>)\s*\S/m,                                              // bare > file
+];
+
+function detectShellWrite(command: string): boolean {
+  return SHELL_FILE_WRITE_PATTERNS.some((re) => re.test(command));
+}
 
 /**
  * Pick the best available shell for the current platform.
@@ -74,6 +100,19 @@ export class ShellTool implements Tool {
         };
       }
       cwd = resolved;
+    }
+
+    // Block shell file-write bypass attempts for read-only roles
+    if (context.taskType && SHELL_WRITE_RESTRICTED.has(context.taskType) && detectShellWrite(command)) {
+      return {
+        success: false,
+        output: '',
+        error:
+          `Shell file-write blocked: "${context.taskType}" agents may not write files via shell ` +
+          `commands (e.g. cat >, echo >, sed -i, tee, mv). ` +
+          `If you found a bug or build error, describe it precisely in report_result ` +
+          `so the team lead can dispatch a debug agent to fix it.`,
+      };
     }
 
     return new Promise<ToolResult>((resolve) => {

@@ -76,12 +76,8 @@ function checkWritePermission(
     return `Write blocked: no agent may write to system files (.aido/, .git/).`;
   }
 
-  const allowed = WRITE_PERMISSIONS[context.taskType] ?? new Set();
-  if (!allowed.has(category)) {
-    return `Write blocked: "${context.taskType}" agents may not write to ${category} files.`;
-  }
-
-  // Implement agents are further constrained to their assigned file list
+  // Implement agents with an assignedFiles list: whitelist is the sole gate.
+  // Category is ignored — both src/foo.ts and tests/foo.test.ts may be assigned.
   if (context.taskType === 'implement' && context.assignedFiles && context.assignedFiles.length > 0) {
     const assignedResolved = context.assignedFiles.map((f) =>
       path.resolve(context.workspaceRoot, f).replace(/\\/g, '/'),
@@ -93,6 +89,12 @@ function checkWritePermission(
         `${context.assignedFiles.join(', ')}. Attempted: ${rel}`
       );
     }
+    return null; // in whitelist — permitted regardless of category
+  }
+
+  const allowed = WRITE_PERMISSIONS[context.taskType] ?? new Set();
+  if (!allowed.has(category)) {
+    return `Write blocked: "${context.taskType}" agents may not write to ${category} files.`;
   }
 
   return null; // permitted

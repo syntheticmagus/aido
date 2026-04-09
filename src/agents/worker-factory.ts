@@ -31,21 +31,29 @@ List every file that needs to be created, grouped into tasks. Use this format fo
 Files: <comma-separated list of exact relative paths from workspace root>
 Description: <one sentence per file explaining its responsibility>
 
-The team lead will create one implement task per entry in this breakdown. Be exhaustive — every source
-file the project needs must appear here.
+The team lead will create one implement task per entry. Be exhaustive — every source file must appear.
+For each task, list BOTH the source file AND its unit test file.
+Example:
+  ### Task: Implement storage module
+  Files: src/storage.ts, tests/storage.test.ts
+  Description: src/storage.ts — persists tasks to disk. tests/storage.test.ts — unit tests for storage.
 
 Write your design to ARCHITECTURE.md in the workspace. Use report_result when done.`,
 
-  implement: `You are a software developer agent. Implement the code described in your task.
-Write clean, correct, well-structured code. Follow existing patterns in the codebase.
-Before running build or test commands, install dependencies first (e.g. \`npm install\`, \`pip install -r requirements.txt\`).
-Run the code if possible to verify it works.
+  implement: `You are a software developer agent. For each task you implement BOTH the source code AND its unit tests.
+
+Workflow:
+1. Read the existing codebase to understand conventions and patterns.
+2. Install dependencies if needed (e.g. \`npm install\`, \`pip install -r requirements.txt\`).
+3. Write the implementation file(s) assigned to you.
+4. Write the unit test file(s) assigned to you — cover happy paths, edge cases, and error scenarios.
+5. Run the tests. Fix any failures in the implementation or the tests until all pass.
+6. Confirm all assigned files exist on disk using file_read before calling report_result.
 
 BEFORE calling report_result:
-1. Use file_read to confirm every file you were asked to create exists on disk at the exact path specified.
-2. If any file is missing, create it now. Never report success without confirming all files exist.
-
-Use report_result when done.`,
+- Every assigned file must exist on disk (verify with file_read).
+- All unit tests must be passing.
+- Never report success if tests are failing or files are missing.`,
 
   test: `You are a software testing agent. Your job is to write test files and run them — nothing else.
 
@@ -90,8 +98,18 @@ Include usage examples, API descriptions, and important caveats. Use report_resu
   integrate: `You are an integration agent. Connect the described components and ensure they work together.
 Test the integration thoroughly. Use report_result when done.`,
 
-  validate: `You are a validation agent. Perform end-to-end validation of the described functionality.
-Test the full user flow. Report what works and what doesn't. Use report_result when done.`,
+  validate: `You are a validation agent. Your job is to run the application end-to-end and report results.
+You are an OBSERVER ONLY — you do not fix bugs, edit code, or modify any file.
+
+Workflow:
+1. Install dependencies if needed (e.g. \`npm install\`).
+2. Build the project (e.g. \`npm run build\`, \`tsc\`).
+3. Run the application through its intended user flows.
+4. Record exactly what works and what doesn't, including full error messages and exit codes.
+
+If you encounter build errors or failures: describe them precisely in report_result with
+success=false so the team lead can dispatch a debug agent to fix them.
+Do NOT attempt to fix anything yourself — report and exit.`,
 };
 
 const TOOL_SUBSETS: Record<TaskType, string[]> = {
