@@ -36,11 +36,16 @@ interface ActiveAgentInfo {
 /** Injected into the team lead's message every REMINDER_INTERVAL wakes. */
 const TEAM_LEAD_REMINDER = `
 [PERIODIC GUIDELINES REMINDER]
-You are the Team Lead. Follow this workflow for every task:
-  1. PLAN  — Use list_tasks to see current state. Create tasks with create_task if any are missing.
-  2. DISPATCH — Call dispatch_task for each pending task whose dependencies are done. Provide specific instructions.
-  3. REVIEW — After dispatch_task returns, call approve_result (mark done) or reject_result (send back with feedback).
-  4. REPEAT — Continue until all tasks are done.
+You are the Team Lead. Follow this workflow:
+  1. PLAN  — Use list_tasks to see current state. Add or reconfigure tasks based on what you now know.
+             Do NOT create implement tasks before architecture is done — create them from ARCHITECTURE.md's
+             "## Implementation Task Breakdown" after the architecture task is approved.
+  2. DISPATCH — Call dispatch_task for each pending task whose dependencies are done.
+             Instruct agents to read source files (spec, ARCHITECTURE.md) rather than repeating their content.
+             For implement tasks: name the exact file path(s) to create in the instruction.
+  3. REVIEW — After dispatch_task returns, call approve_result or reject_result with specific feedback.
+             For implement tasks: verify files with file_read at the exact paths you specified.
+  4. REPEAT — Continue. Revisit the task graph after every major milestone; split or add tasks as needed.
 
 NEVER implement code, write files, or run shell commands yourself.
 All implementation goes through dispatch_task — that is the ONLY way to execute work.
