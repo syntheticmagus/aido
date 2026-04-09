@@ -266,7 +266,8 @@ export class Orchestrator extends EventEmitter {
    * synchronously and returns the result directly to the team lead's conversation.
    */
   private makeAgentRunner(): RunAgentFn {
-    return async (task: Task, instruction?: string): Promise<AgentResult> => {
+    return async (task: Task, opts?: { instruction?: string; assignedFiles?: string[] }): Promise<AgentResult> => {
+      const { instruction, assignedFiles } = opts ?? {};
       if (!this.modelRouter || !this.config || !this.budgetTracker || !this.taskGraph) {
         return { success: false, summary: 'Orchestrator not ready', artifacts: [], tokensUsed: { input: 0, output: 0 } };
       }
@@ -300,12 +301,15 @@ export class Orchestrator extends EventEmitter {
         taskId: task.id,
         workspaceRoot: this.projectRoot,
         projectName: this.projectName,
+        taskType: task.type,
+        assignedFiles: assignedFiles ?? [],
         emitOutput: (chunk: string) => this.emit('agent:output', { agentId, chunk }),
       };
 
+      const workspaceHeader = `Workspace root: ${this.projectRoot}\nAll file paths are relative to this directory unless otherwise specified.\n\n`;
       const initialMessage = instruction
-        ? `${task.description}\n\n## Team Lead Instructions\n${instruction}`
-        : task.description;
+        ? `${workspaceHeader}${task.description}\n\n## Team Lead Instructions\n${instruction}`
+        : `${workspaceHeader}${task.description}`;
 
       const agent = createWorkerAgent(task, context, model, provider, this.config.defaults.maxToolCallsPerTurn);
 

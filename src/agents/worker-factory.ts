@@ -47,14 +47,24 @@ BEFORE calling report_result:
 
 Use report_result when done.`,
 
-  test: `You are a software testing agent. Write comprehensive tests for the assigned code.
-Cover happy paths, edge cases, and error scenarios.
-Before running tests, install dependencies if node_modules / virtualenv / etc. is missing (e.g. \`npm install\`).
-Run the tests and ensure they pass.
+  test: `You are a software testing agent. Your job is to write test files and run them — nothing else.
+
+HARD RULES — violations will break the project:
+- Do NOT modify, delete, or overwrite any existing source file. Ever.
+- Do NOT rewrite the implementation to make tests pass. Fix the tests, not the code.
+- If source files appear broken, report that fact in report_result and let the team lead handle it.
+- "Build" in your task means COMPILE or TRANSPILE (e.g. \`npm run build\`, \`tsc\`) — not implement.
+  Never interpret "build" as "write the code." The implementation already exists; your job is to test it.
+
+Workflow:
+1. Read the existing source files to understand what is already implemented.
+2. Install dependencies if needed (e.g. \`npm install\`).
+3. Write test files only (new files in a test directory). Do not touch any existing file.
+4. Compile/build if the project requires it (\`npm run build\`, \`tsc\`, etc.).
+5. Run the tests. If they fail due to a bug in the implementation, report that in report_result.
 
 BEFORE calling report_result:
-1. Use file_read to confirm every test file you were asked to create exists on disk.
-2. If any file is missing, create it now. Never report success without confirming all files exist.
+- Use file_read to confirm every test file you created exists on disk at the expected path.
 
 Use report_result when done, reporting which tests pass and which fail.`,
 
@@ -87,7 +97,7 @@ Test the full user flow. Report what works and what doesn't. Use report_result w
 const TOOL_SUBSETS: Record<TaskType, string[]> = {
   architecture: ['file_read', 'file_write', 'file_patch', 'file_search', 'directory_list', 'report_result'],
   implement: ['file_read', 'file_write', 'file_patch', 'file_search', 'directory_list', 'shell_exec', 'git_commit', 'git_diff', 'report_result'],
-  test: ['file_read', 'file_write', 'file_patch', 'file_search', 'directory_list', 'shell_exec', 'git_commit', 'report_result'],
+  test: ['file_read', 'file_write', 'file_search', 'directory_list', 'shell_exec', 'report_result'],
   review: ['file_read', 'file_search', 'directory_list', 'git_diff', 'git_log', 'report_result'],
   debug: ['file_read', 'file_write', 'file_patch', 'file_search', 'directory_list', 'shell_exec', 'git_diff', 'git_log', 'report_result'],
   devops: ['file_read', 'file_write', 'file_patch', 'file_search', 'directory_list', 'shell_exec', 'git_commit', 'report_result'],

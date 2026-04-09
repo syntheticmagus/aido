@@ -11,6 +11,13 @@ export interface AgentContext {
   taskId: string;
   workspaceRoot: string;
   projectName: string;
+  /** Role of the agent — used to enforce file write permissions at the tool layer. */
+  taskType?: import('../config/schema.js').TaskType;
+  /**
+   * For implement agents: the exact file paths (relative to workspaceRoot) this agent
+   * is permitted to write. Writes to any other path are blocked. Empty = unrestricted.
+   */
+  assignedFiles?: string[];
   // Stream output chunks back to the UI / socket layer in real time.
   emitOutput: (chunk: string) => void;
 }

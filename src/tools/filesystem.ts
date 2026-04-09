@@ -3,8 +3,117 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import { spawn } from 'node:child_process';
 import type { Tool, ToolResult, AgentContext } from './types.js';
+import type { TaskType } from '../config/schema.js';
 
 const MAX_LINES = 500;
+
+// ─── File access control ──────────────────────────────────────────────────────
+
+type PathCategory = 'system' | 'test' | 'config' | 'doc' | 'impl';
+
+const CONFIG_BASENAMES = new Set([
+  'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+  'dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
+  '.gitignore', '.gitattributes', '.editorconfig',
+]);
+const CONFIG_PATTERNS = [
+  /^tsconfig.*\.json$/i,
+  /\.config\.(js|ts|mjs|cjs)$/i,
+  /^\.env/i,
+  /^\.eslintrc/i,
+  /^\.prettierrc/i,
+  /^babel\.config/i,
+  /^jest\.config/i,
+  /^vite\.config/i,
+  /^webpack\.config/i,
+];
+
+function classifyPath(relativePath: string): PathCategory {
+  const p = relativePath.replace(/\\/g, '/');
+  const base = path.basename(p).toLowerCase();
+  const lower = p.toLowerCase();
+
+  // System — .aido/ and .git/ are off-limits to all agents
+  if (lower.startsWith('.aido/') || lower === '.aido' || lower.startsWith('.git/') || lower === '.git') {
+    return 'system';
+  }
+  // Test files
+  if (/\.(test|spec)\.[^./]+$/.test(lower)) return 'test';
+  if (/(^|\/)(tests?|__tests?__)\//.test(lower)) return 'test';
+  // Config files (by known basename or pattern)
+  if (CONFIG_BASENAMES.has(base)) return 'config';
+  if (CONFIG_PATTERNS.some((re) => re.test(base))) return 'config';
+  // Doc files
+  if (lower.endsWith('.md') || /(^|\/)docs?\//.test(lower)) return 'doc';
+  // Everything else is impl
+  return 'impl';
+}
+
+// Which categories each role may write to. 'system' is never writable via tools.
+const WRITE_PERMISSIONS: Record<TaskType, Set<PathCategory>> = {
+  architecture: new Set(['doc']),
+  implement:    new Set(['impl']),
+  test:         new Set(['test']),
+  review:       new Set(),
+  debug:        new Set(['impl', 'test']),
+  devops:       new Set(['config']),
+  docs:         new Set(['doc']),
+  integrate:    new Set(['impl', 'config']),
+  validate:     new Set(),
+};
+
+function checkWritePermission(
+  resolvedPath: string,
+  context: AgentContext,
+): string | null {
+  // No taskType = legacy/team-lead path; allow (team lead has no write tools anyway)
+  if (!context.taskType) return null;
+
+  const rel = path.relative(context.workspaceRoot, resolvedPath).replace(/\\/g, '/');
+  const category = classifyPath(rel);
+
+  if (category === 'system') {
+    return `Write blocked: no agent may write to system files (.aido/, .git/).`;
+  }
+
+  const allowed = WRITE_PERMISSIONS[context.taskType] ?? new Set();
+  if (!allowed.has(category)) {
+    return `Write blocked: "${context.taskType}" agents may not write to ${category} files.`;
+  }
+
+  // Implement agents are further constrained to their assigned file list
+  if (context.taskType === 'implement' && context.assignedFiles && context.assignedFiles.length > 0) {
+    const assignedResolved = context.assignedFiles.map((f) =>
+      path.resolve(context.workspaceRoot, f).replace(/\\/g, '/'),
+    );
+    const resolvedNorm = resolvedPath.replace(/\\/g, '/');
+    if (!assignedResolved.includes(resolvedNorm)) {
+      return (
+        `Write blocked: this implement task is authorized to write only: ` +
+        `${context.assignedFiles.join(', ')}. Attempted: ${rel}`
+      );
+    }
+  }
+
+  return null; // permitted
+}
+
+async function appendAuditLog(context: AgentContext, op: 'write' | 'patch', filePath: string): Promise<void> {
+  try {
+    const logPath = path.join(context.workspaceRoot, '.aido', 'file-writes.jsonl');
+    const entry = JSON.stringify({
+      ts: Date.now(),
+      agentId: context.agentId,
+      taskId: context.taskId,
+      taskType: context.taskType ?? 'unknown',
+      op,
+      path: filePath,
+    });
+    await fs.appendFile(logPath, entry + '\n', 'utf-8');
+  } catch {
+    // Best-effort — don't let audit failures break the agent
+  }
+}
 
 function clampToWorkspace(
   inputPath: string,
@@ -105,11 +214,15 @@ export class FileWriteTool implements Tool {
       return { success: false, output: '', error: 'Path is outside workspace root.' };
     }
 
+    const denied = checkWritePermission(resolved, context);
+    if (denied) return { success: false, output: '', error: denied };
+
     try {
       if (createDirs) {
         await fs.mkdir(path.dirname(resolved), { recursive: true });
       }
       await fs.writeFile(resolved, content, 'utf-8');
+      void appendAuditLog(context, 'write', inputPath);
       return { success: true, output: `Written ${content.length} bytes to ${inputPath}` };
     } catch (err) {
       return { success: false, output: '', error: `Cannot write file: ${(err as Error).message}` };
@@ -152,6 +265,9 @@ export class FilePatchTool implements Tool {
       return { success: false, output: '', error: 'Path is outside workspace root.' };
     }
 
+    const denied = checkWritePermission(resolved, context);
+    if (denied) return { success: false, output: '', error: denied };
+
     let content: string;
     try {
       content = await fs.readFile(resolved, 'utf-8');
@@ -181,6 +297,7 @@ export class FilePatchTool implements Tool {
 
     try {
       await fs.writeFile(resolved, result, 'utf-8');
+      void appendAuditLog(context, 'patch', inputPath);
       return { success: true, output: `Patched occurrence ${occurrence} in ${inputPath}` };
     } catch (err) {
       return { success: false, output: '', error: `Cannot write file: ${(err as Error).message}` };

@@ -20,7 +20,10 @@ const log = createLogger({ module: 'team-lead' });
  * The call is synchronous from the team lead's perspective — it blocks until
  * the agent completes and returns the result for immediate review.
  */
-export type RunAgentFn = (task: import('../config/schema.js').Task, instruction?: string) => Promise<AgentResult>;
+export type RunAgentFn = (
+  task: import('../config/schema.js').Task,
+  opts?: { instruction?: string; assignedFiles?: string[] },
+) => Promise<AgentResult>;
 
 export class TeamLeadAgent extends BaseAgent {
   private _tools: ToolRegistry;
@@ -209,14 +212,27 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
           instruction: {
             type: 'string',
             description:
-              'Specific guidance for the agent: what to build, patterns to follow, how to verify success. ' +
+              'Specific guidance for the agent: which files to read, what to build, how to verify success. ' +
+              'Point agents at source files to read rather than paraphrasing their content. ' +
               'Be precise — the agent cannot ask follow-up questions.',
+          },
+          assignedFiles: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'For implement tasks: the exact file paths (relative to workspace root) this agent is ' +
+              'permitted to create or modify. Writes to any other path will be blocked. ' +
+              'Should match the paths listed in the architecture task breakdown.',
           },
         },
         required: ['taskId'],
       },
       async execute(params: unknown): Promise<ToolResult> {
-        const { taskId, instruction } = params as { taskId: string; instruction?: string };
+        const { taskId, instruction, assignedFiles } = params as {
+          taskId: string;
+          instruction?: string;
+          assignedFiles?: string[];
+        };
 
         const task = graph.getTask(taskId);
         if (!task) return { success: false, output: '', error: `Task ${taskId} not found` };
@@ -239,7 +255,16 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
 
         graph.updateTask(taskId, { status: 'in-progress' });
 
-        const result = await runAgent(task, instruction);
+        // Prepend authorized-files notice so the agent knows what it can write
+        let effectiveInstruction = instruction;
+        if (assignedFiles && assignedFiles.length > 0) {
+          const notice =
+            `You are authorized to write ONLY these files: ${assignedFiles.join(', ')}. ` +
+            `Writes to any other path will be blocked by the system.\n\n`;
+          effectiveInstruction = notice + (instruction ?? '');
+        }
+
+        const result = await runAgent(task, { instruction: effectiveInstruction, assignedFiles });
 
         const freshTask = graph.getTask(taskId)!;
         const newAttempts = freshTask.attempts + 1;
