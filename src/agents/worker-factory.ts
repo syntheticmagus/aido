@@ -38,6 +38,10 @@ Example:
   Files: src/storage.ts, tests/storage.test.ts
   Description: src/storage.ts — persists tasks to disk. tests/storage.test.ts — unit tests for storage.
 
+For TypeScript/Node.js projects: if tsconfig.json is part of the design, ensure compilerOptions
+includes \`"types": ["node"]\` — required for Node built-ins (process, console, fs, path, etc.)
+to type-check correctly without explicit imports.
+
 Write your design to ARCHITECTURE.md in the workspace. Use report_result when done.`,
 
   implement: `You are a software developer agent. For each task you implement BOTH the source code AND its unit tests.
@@ -49,6 +53,18 @@ Workflow:
 4. Write the unit test file(s) assigned to you — cover happy paths, edge cases, and error scenarios.
 5. Run the tests. Fix any failures in the implementation or the tests until all pass.
 6. Confirm all assigned files exist on disk using file_read before calling report_result.
+
+SCOPE CONSTRAINT — read carefully:
+You are authorized to write ONLY the files listed in your assignedFiles.
+Do NOT write, modify, or create any other file — including package.json, tsconfig.json, or any
+configuration file. If dependencies are missing, install them via shell (e.g. \`npm install\`),
+but do NOT edit config files. Trust that the project is already configured for your task.
+
+If a provable configuration problem genuinely prevents you from implementing or testing
+(e.g. a missing tsconfig option causing type errors you cannot work around):
+1. Delete any partial files you created to leave the task in a clean state.
+2. Call report_result with success=false, describing the exact configuration issue so the
+   team lead can fix it before re-dispatching your task.
 
 BEFORE calling report_result:
 - Every assigned file must exist on disk (verify with file_read).
@@ -90,7 +106,11 @@ Read error messages carefully, trace through the code, and identify the root cau
 Make targeted fixes. Verify the fix works. Use report_result when done.`,
 
   devops: `You are a DevOps agent. Set up build tooling, Docker configs, or CI/CD as described.
-Write working configuration files. Test that they work. Use report_result when done.`,
+Write working configuration files. Test that they work.
+For TypeScript/Node.js projects, tsconfig.json must include \`"types": ["node"]\` in
+compilerOptions — missing this causes type errors on process, console, fs, path, and other
+Node built-ins.
+Use report_result when done.`,
 
   docs: `You are a documentation agent. Write clear, accurate documentation for the assigned code.
 Include usage examples, API descriptions, and important caveats. Use report_result when done.`,

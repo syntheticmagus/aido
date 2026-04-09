@@ -19,12 +19,18 @@ const SHELL_WRITE_RESTRICTED = new Set<TaskType>(['validate', 'review']);
  * Ordered from most specific to most general.
  */
 const SHELL_FILE_WRITE_PATTERNS: RegExp[] = [
-  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\b|--in-place\b)/m,                          // sed -i / --in-place
-  /\btee\b(?!\s+\/dev\/(?:null|stdout|stderr))\s+\S/m,                           // tee <file> (not /dev/null etc.)
-  /\bmv\s+\S+\s+\S/m,                                                            // mv src dst
-  /(?:^|[;&|({\n])\s*(?:cat|echo|printf)\b[^|<\n]*>>/m,                         // cmd >> file (append)
-  /(?:^|[;&|({\n])\s*(?:cat|echo|printf)\b[^|<\n]*(?<![>])>/m,                  // cmd > file (overwrite)
-  /(?:^|[;&|({\n])\s*>(?!>)\s*\S/m,                                              // bare > file
+  // sed -i / --in-place: in-place file edit
+  /\bsed\s+(?:-[a-zA-Z]*i[a-zA-Z]*\b|--in-place\b)/m,
+  // tee writing to a real file (not /dev/null, /dev/stdout, /dev/stderr)
+  /\btee\b(?!\s+\/dev\/(?:null|stdout|stderr))\s+\S/m,
+  // mv: could clobber source files
+  /\bmv\s+\S+\s+\S/m,
+  // cmd >> file — append redirect; exclude >>&digit FD redirects (e.g. >>&1)
+  /(?:^|[;&|({\n])\s*(?:cat|echo|printf)\b[^|<\n]*>>(?![&\d])/m,
+  // cmd > file — overwrite redirect; exclude >&digit FD redirects (e.g. 2>&1) and >>
+  /(?:^|[;&|({\n])\s*(?:cat|echo|printf)\b[^|<\n]*(?<![>])>(?![>&\d])/m,
+  // bare > file — exclude >&, >>, and >/dev/ paths
+  /(?:^|[;&|({\n])\s*>(?![>&])\s*(?!\/dev\/)\S/m,
 ];
 
 function detectShellWrite(command: string): boolean {
