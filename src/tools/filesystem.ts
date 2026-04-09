@@ -117,6 +117,11 @@ async function appendAuditLog(context: AgentContext, op: 'write' | 'patch', file
   }
 }
 
+/** Normalize a path to forward slashes for use with fast-glob (which rejects backslashes). */
+function toGlobPath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
 function clampToWorkspace(
   inputPath: string,
   workspaceRoot: string,
@@ -378,7 +383,8 @@ async function nodeGrepFallback(
   fileGlob: string | undefined,
   maxResults: number,
 ): Promise<ToolResult> {
-  const globPattern = fileGlob ? `${dir}/**/${fileGlob}` : `${dir}/**/*`;
+  const globDir = toGlobPath(dir);
+  const globPattern = fileGlob ? `${globDir}/**/${fileGlob}` : `${globDir}/**/*`;
   const files = await fg(globPattern, { onlyFiles: true, ignore: ['**/.git/**', '**/.aido/**'] });
 
   const regex = new RegExp(pattern, 'g');
@@ -434,15 +440,17 @@ export class DirectoryListTool implements Tool {
       ? clampToWorkspace(inputPath, context.workspaceRoot) ?? context.workspaceRoot
       : context.workspaceRoot;
 
-    const pattern = recursive ? `${dir}/**/*` : `${dir}/*`;
+    const globDir = toGlobPath(dir);
+    const pattern = recursive ? `${globDir}/**/*` : `${globDir}/*`;
     const files = await fg(pattern, {
       onlyFiles: false,
       ignore: ['**/.git/**'],
       deep: recursive ? maxDepth : 1,
     });
 
+    const rootPrefix = toGlobPath(context.workspaceRoot);
     const relative = files
-      .map((f) => f.replace(context.workspaceRoot + '/', ''))
+      .map((f) => f.replace(rootPrefix + '/', '').replace(rootPrefix, ''))
       .sort()
       .join('\n');
 
