@@ -76,11 +76,12 @@ export class WorkspaceManager {
   async listArtifacts(projectName: string): Promise<string[]> {
     const fg = (await import('fast-glob')).default;
     const root = this.getProjectRoot(projectName);
-    const files = await fg(`${root}/**/*`, {
+    const globRoot = root.replace(/\\/g, '/');
+    const files = await fg(`${globRoot}/**/*`, {
       onlyFiles: true,
-      ignore: [`${root}/.aido/**`, `${root}/.git/**`],
+      ignore: [`${globRoot}/.aido/**`, `${globRoot}/.git/**`],
     });
-    return files.map((f) => f.replace(root + '/', ''));
+    return files.map((f) => f.replace(globRoot + '/', ''));
   }
 
   async projectExists(projectName: string): Promise<boolean> {

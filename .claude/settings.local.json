@@ -24,7 +24,8 @@
       "Bash(grep -h '\"role\": \"user\"' agents/*/history.json)",
       "Bash(grep -A 3 'Workspace root' agents/*/history.json)",
       "Bash(ls -la agents/*/history.json)",
-      "Bash(sort -k2 -rn)"
+      "Bash(sort -k2 -rn)",
+      "Bash(grep:*)"
     ]
   }
 }
