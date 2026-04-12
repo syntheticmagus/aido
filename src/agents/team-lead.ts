@@ -335,11 +335,24 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
       },
       async execute(params: unknown): Promise<ToolResult> {
         const missing = requireFields(params, 'title', 'description', 'type');
-        if (missing) return { success: false, output: '', error: missing };
+        if (missing) {
+          const example =
+            `\n\nExample of a valid create_task call:\n` +
+            `{\n` +
+            `  "title": "Implement user authentication",\n` +
+            `  "description": "Write src/auth.ts implementing JWT login. Tests in src/auth.test.ts.",\n` +
+            `  "type": "implement",\n` +
+            `  "dependencies": [],\n` +
+            `  "priority": 5\n` +
+            `}`;
+          return { success: false, output: '', error: missing + example };
+        }
         const VALID_TYPES = ['architecture','implement','test','review','debug','devops','docs','integrate','validate'];
         const p = params as { title: string; description: string; type: string; dependencies?: string[]; priority?: number; maxAttempts?: number };
         if (!VALID_TYPES.includes(p.type)) {
-          return { success: false, output: '', error: `Invalid type "${p.type}". Must be one of: ${VALID_TYPES.join(', ')}` };
+          return { success: false, output: '', error:
+            `Invalid type "${p.type}". Must be one of: ${VALID_TYPES.join(', ')}.\n` +
+            `Example: "type": "implement"` };
         }
         const task = graph.createTask({
           title: p.title,

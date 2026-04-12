@@ -22,6 +22,7 @@ export abstract class BaseAgent {
   readonly id: string;
   private history: Message[] = [];
   private totalTokens = { input: 0, output: 0 };
+  private consecutiveFailures = new Map<string, number>();
   abort = false;
 
   private log: ReturnType<typeof createLogger>;
@@ -39,6 +40,7 @@ export abstract class BaseAgent {
   async run(initialMessage: string): Promise<AgentResult> {
     this.history = [];
     this.totalTokens = { input: 0, output: 0 };
+    this.consecutiveFailures = new Map();
 
     this.history.push({ role: 'user', content: initialMessage });
 
@@ -129,6 +131,25 @@ export abstract class BaseAgent {
         }
 
         const result = await this.executeTool(toolUse);
+
+        if (result.error === 'circuit_breaker_triggered') {
+          toolResultBlocks.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: result.output,
+            is_error: true,
+          });
+          this.history.push({ role: 'user', content: toolResultBlocks });
+          await this.archiveHistory();
+          return {
+            success: false,
+            summary: result.output,
+            artifacts: [],
+            tokensUsed: this.totalTokens,
+            error: 'circuit_breaker_triggered',
+          };
+        }
+
         toolResultBlocks.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
@@ -211,8 +232,9 @@ export abstract class BaseAgent {
     }
 
     this.log.info({ tool: toolUse.name, input: toolUse.input }, 'Executing tool');
+    let result: ToolResult;
     try {
-      const result = await tool.execute(toolUse.input, this.context);
+      result = await tool.execute(toolUse.input, this.context);
       this.log.info(
         {
           tool: toolUse.name,
@@ -222,12 +244,42 @@ export abstract class BaseAgent {
         },
         'Tool completed',
       );
-      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log.error({ tool: toolUse.name, err: msg }, 'Tool threw exception');
-      return { success: false, output: '', error: msg };
+      result = { success: false, output: '', error: msg };
     }
+
+    // Circuit breaker: detect repeated identical failures
+    const errorKey = `${toolUse.name}|${result.error ?? result.output}`;
+    if (!result.success) {
+      const count = (this.consecutiveFailures.get(errorKey) ?? 0) + 1;
+      this.consecutiveFailures.set(errorKey, count);
+
+      if (count >= 5) {
+        return {
+          success: false,
+          output:
+            `[CIRCUIT BREAKER] "${toolUse.name}" has failed ${count} consecutive times ` +
+            `with the same error. Terminating to prevent a runaway loop.\nError: ${result.error}`,
+          error: 'circuit_breaker_triggered',
+        };
+      }
+
+      if (count >= 3) {
+        return {
+          ...result,
+          output:
+            (result.output ? result.output + '\n\n' : '') +
+            `[WARNING] This is failure ${count} in a row for "${toolUse.name}" with the same error. ` +
+            `You MUST change your approach — re-read the tool schema and supply all required parameters with non-empty values.`,
+        };
+      }
+    } else {
+      this.consecutiveFailures.delete(errorKey);
+    }
+
+    return result;
   }
 
   protected parseResult(lastTextBlock: string): AgentResult {
