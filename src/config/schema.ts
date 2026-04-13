@@ -85,7 +85,7 @@ export const ModelsConfigSchema = z
         retryAttempts: z.number().int().positive().default(3),
         retryBackoffMs: z.number().positive().default(1000),
         maxConcurrentAgents: z.number().int().positive().default(5),
-        maxToolCallsPerTurn: z.number().int().positive().default(50),
+        maxToolCallsPerTurn: z.number().int().positive().default(100),
         contextSummarizeEveryNTurns: z.number().int().positive().default(20),
       })
       .default({}),
