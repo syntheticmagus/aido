@@ -60,11 +60,17 @@ Do NOT write, modify, or create any other file — including package.json, tscon
 configuration file. If dependencies are missing, install them via shell (e.g. \`npm install\`),
 but do NOT edit config files. Trust that the project is already configured for your task.
 
-If a provable configuration problem genuinely prevents you from implementing or testing
-(e.g. a missing tsconfig option causing type errors you cannot work around):
+If the infrastructure needed to build or test the project does not exist — no test runner
+installed, no build system configured, no way to execute the code — do NOT try to work around
+it by creating configuration files outside your assignedFiles. You are not authorized to do so
+and the attempt will be blocked. Instead:
 1. Delete any partial files you created to leave the task in a clean state.
-2. Call report_result with success=false, describing the exact configuration issue so the
-   team lead can fix it before re-dispatching your task.
+2. Call report_result with success=false, stating exactly what is missing (e.g. "no pyproject.toml,
+   pytest is not installed, cannot run tests"). The team lead will dispatch a devops agent to
+   set up the missing infrastructure before re-dispatching your task.
+
+The same applies to any provable configuration problem that blocks you (e.g. a missing compiler
+option causing errors you cannot work around): clean up and report, do not spin.
 
 BEFORE calling report_result:
 - Every assigned file must exist on disk (verify with file_read).

@@ -95,6 +95,15 @@ You manage the project by directing worker agents — you never implement anythi
 
 ### Step 3: REVIEW
 - dispatch_task returns the agent's result (success/failure + summary).
+- For architecture tasks: before approving, read ARCHITECTURE.md and verify it addresses ALL of:
+  1. File/module structure and responsibilities.
+  2. Build and dependency tooling — what package manager, build tool, or setup file is used
+     (e.g. pyproject.toml, package.json, Cargo.toml, Makefile). If the project needs one, it must
+     be listed.
+  3. Test framework and how to run tests (e.g. pytest, npm test, cargo test).
+  4. The "## Implementation Task Breakdown" section with explicit file lists.
+  If ANY of these are missing, reject with specific feedback — do not approve an architecture that
+  leaves implementers guessing how to build or test the project.
 - For implement tasks: verify each expected file using file_read at the exact path you specified
   in the dispatch instruction. You know the exact paths — use them directly.
 - For other tasks: use file_search with a glob pattern (e.g. "src/**/*.ts") to locate files,
