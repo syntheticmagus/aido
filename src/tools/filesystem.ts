@@ -56,7 +56,7 @@ const WRITE_PERMISSIONS: Record<TaskType, Set<PathCategory>> = {
   test:         new Set(['test']),
   review:       new Set(),
   debug:        new Set(['impl', 'test']),
-  devops:       new Set(['config']),
+  devops:       new Set(['config', 'impl']),
   docs:         new Set(['doc']),
   integrate:    new Set(['impl', 'config']),
   validate:     new Set(),
