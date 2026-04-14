@@ -22,7 +22,7 @@ export class OpenAIProvider implements LLMProvider {
     try {
       const response = await this.client.chat.completions.create({
         model: request.model,
-        max_tokens: request.maxTokens ?? 8192,
+        max_tokens: request.maxTokens,
         temperature: request.temperature ?? 0.2,
         messages: toOpenAIMessages(request),
         tools: request.tools?.map((t) => ({
@@ -76,7 +76,7 @@ export class OpenAIProvider implements LLMProvider {
     try {
       stream = await this.client.chat.completions.create({
         model: request.model,
-        max_tokens: request.maxTokens ?? 8192,
+        max_tokens: request.maxTokens,
         temperature: request.temperature ?? 0.2,
         messages: toOpenAIMessages(request),
         tools: request.tools?.map((t) => ({

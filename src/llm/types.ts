@@ -44,7 +44,7 @@ export interface ChatRequest {
   messages: Message[];
   tools?: ToolDefinition[];
   temperature?: number;
-  maxTokens?: number;
+  maxTokens: number;
   systemPrompt?: string;
 }
 

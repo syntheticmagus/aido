@@ -45,7 +45,7 @@ export const ModelConfigSchema = z.object({
   model: z.string(),
   apiKey: z.string().optional(),
   baseUrl: z.string().optional(),
-  maxTokens: z.number().int().positive().default(8192),
+  maxTokens: z.number().int().positive().default(32768),
   rateLimit: z
     .object({
       requestsPerMinute: z.number().positive(),

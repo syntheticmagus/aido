@@ -1,3 +1,5 @@
+import fsPromises from 'node:fs/promises';
+import path from 'node:path';
 import { BaseAgent } from './base-agent.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { FileReadTool, FileSearchTool, DirectoryListTool } from '../tools/filesystem.js';
@@ -121,6 +123,9 @@ You manage the project by directing worker agents — you never implement anythi
   Never bundle multiple unrelated modules into one implement task.
   Never create a separate test task for unit tests — unit tests belong to the implement task.
 - **Integrate:** one task for cross-module wiring and integration tests, after all implement tasks.
+  Always include the integration test directory in assignedFiles (e.g. tests/integration/ for
+  Python, test/integration/ for Node). The agent must write integration test files — not just run
+  existing unit tests. If unsure of the path, read ARCHITECTURE.md for the project test layout.
 - **Validate:** one end-to-end smoke-test task at the very end. Reports only — no fixes.
 - **Debug:** dispatched explicitly when integrate or validate reports failures.
 - **When in doubt, split.** A repeatedly failing task is usually too large — break it up.
@@ -255,7 +260,7 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
         },
         required: ['taskId'],
       },
-      async execute(params: unknown): Promise<ToolResult> {
+      async execute(params: unknown, ctx: AgentContext): Promise<ToolResult> {
         const { taskId, instruction, assignedFiles } = params as {
           taskId: string;
           instruction?: string;
@@ -316,13 +321,31 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
           graph.updateTask(taskId, { status: nextStatus, attempts: newAttempts });
         }
 
+        // Check that each authorized file was actually written to disk
+        const missingFiles: string[] = [];
+        if (result.success && assignedFiles && assignedFiles.length > 0) {
+          for (const f of assignedFiles) {
+            try {
+              await fsPromises.access(path.resolve(ctx.workspaceRoot, f));
+            } catch {
+              missingFiles.push(f);
+            }
+          }
+        }
+
         const statusLine = result.success
           ? `SUCCESS — task is now in "review" status. Call approve_result or reject_result.`
           : `FAILED (attempt ${newAttempts}/${freshTask.maxAttempts}) — task reset to "${graph.getTask(taskId)?.status}".`;
 
+        const missingNote = missingFiles.length > 0
+          ? `\nWARNING: These authorized files were NOT found on disk after the agent finished: ` +
+            `${missingFiles.join(', ')}. Verify paths before approving — the agent may have written ` +
+            `to a different location.`
+          : '';
+
         return {
           success: true,
-          output: `${statusLine}\n\nAgent summary: ${result.summary}\nArtifacts: ${result.artifacts.join(', ') || 'none'}${result.error ? `\nError: ${result.error}` : ''}`,
+          output: `${statusLine}${missingNote}\n\nAgent summary: ${result.summary}\nArtifacts: ${result.artifacts.join(', ') || 'none'}${result.error ? `\nError: ${result.error}` : ''}`,
         };
       },
     };
@@ -365,6 +388,16 @@ architecture | implement | test | review | debug | devops | docs | integrate | v
           return { success: false, output: '', error:
             `Invalid type "${p.type}". Must be one of: ${VALID_TYPES.join(', ')}.\n` +
             `Example: "type": "implement"` };
+        }
+        for (const depId of (p.dependencies ?? [])) {
+          if (!graph.getTask(depId)) {
+            return {
+              success: false,
+              output: '',
+              error: `Dependency "${depId}" does not exist in the task graph. ` +
+                     `Call list_tasks to see valid task IDs before creating dependencies.`,
+            };
+          }
         }
         const task = graph.createTask({
           title: p.title,

@@ -148,7 +148,7 @@ function toGeminiRequest(request: ChatRequest): GenerateContentRequest {
       : undefined,
     generationConfig: {
       temperature: request.temperature ?? 0.2,
-      maxOutputTokens: request.maxTokens ?? 8192,
+      maxOutputTokens: request.maxTokens,
     },
   };
 }
