@@ -1,5 +1,6 @@
 import { EventEmitter, once } from 'node:events';
 import path from 'node:path';
+import fsPromises from 'node:fs/promises';
 import { createLogger } from '../utils/logger.js';
 import { generateId } from '../utils/id.js';
 import { TaskGraph } from './task-graph.js';
@@ -188,6 +189,10 @@ export class Orchestrator extends EventEmitter {
 
     this.setStatus('running');
 
+    // Register termination handlers so we leave a record on SIGINT/SIGTERM
+    process.once('SIGINT', () => { void this.writeTerminationRecord('SIGINT').finally(() => this.stop()); });
+    process.once('SIGTERM', () => { void this.writeTerminationRecord('SIGTERM').finally(() => this.stop()); });
+
     // Give Team Lead the spec and kick off the loop
     const initMessage =
       `You are managing the following project. Read the spec carefully, ` +
@@ -256,6 +261,7 @@ export class Orchestrator extends EventEmitter {
 
     if (this.budgetTracker.isExhausted()) {
       log.warn('Budget exhausted — stopping orchestrator');
+      await this.writeTerminationRecord('budget_exhausted');
       this.setStatus('failed');
     }
   }
@@ -419,6 +425,29 @@ export class Orchestrator extends EventEmitter {
 
   getBudget() {
     return this.budgetTracker?.getState() ?? null;
+  }
+
+  private async writeTerminationRecord(reason: string): Promise<void> {
+    try {
+      const record = {
+        reason,
+        timestamp: new Date().toISOString(),
+        inFlightTasks: [...this.activeAgents.values()].map((a) => ({
+          agentId: a.agentId,
+          taskId: a.taskId,
+          role: a.role,
+          startTime: new Date(a.startTime).toISOString(),
+        })),
+        taskGraphSummary: this.taskGraph?.getAllTasks().map((t) => ({ id: t.id, status: t.status })) ?? [],
+      };
+      await fsPromises.writeFile(
+        path.join(this.projectRoot, '.aido', 'termination-record.json'),
+        JSON.stringify(record, null, 2),
+      );
+      log.info({ reason }, 'Termination record written');
+    } catch (err) {
+      log.warn({ err }, 'Failed to write termination record');
+    }
   }
 
   private getProvider(modelId: string): LLMProvider {
